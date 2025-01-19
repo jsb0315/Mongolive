@@ -1,6 +1,6 @@
-//test
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
+import axios from 'axios';
 
 const socket = io(`http://${process.env.REACT_APP_IP}:3001`, {
   transports: ['websocket']
@@ -10,6 +10,7 @@ function App() {
   const [users, setUsers] = useState([]);
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
   useEffect(() => {
     // Listen for updates from the server
@@ -25,6 +26,24 @@ function App() {
       socket.off('updateUsers');
     };
   }, []);
+
+  const handleEditClick = (userId, userContent) => {
+    setSelectedUserId(userId);
+    setContent(JSON.stringify(userContent, null, 2));
+    setOpen(!open);
+  };
+
+  const handleConfirmClick = async () => {
+    try {
+      const updatedData = JSON.parse(content);
+      await axios.put(`http://${process.env.REACT_APP_IP}:3001/api/users/${selectedUserId}`, updatedData);
+      setOpen(false);
+      setSelectedUserId(null);
+      setContent('');
+    } catch (error) {
+      console.error('Error updating user:', error);
+    }
+  };
 
   return (
     <div style={{
@@ -82,8 +101,9 @@ function App() {
                 </details>
               </td>
               <td>
-                <button onClick={() => setOpen(!open)}>Edit</button>
-                {open && <div
+                <button onClick={() => handleEditClick(user._id, user)}>Edit</button>
+                {open && selectedUserId === user._id && (
+                  <div
                     style={{
                       margin: '10px 0',
                       padding: '5px',
@@ -95,16 +115,20 @@ function App() {
                   >
                     <strong>JSON Data:</strong>
                     <br />
-                    <input
+                    <textarea
                       style={{
                         whiteSpace: 'pre-wrap',
                         display: 'block',
+                        minHeight: '20px',
+                        width: '200px',
+                        overflowY: 'scroll',
                       }}
+                      value={content}
                       onChange={(e) => setContent(e.target.value)}
-                    >
-                      {/* {content} */}
-                    </input>
-                  </div>}
+                    />
+                    <button onClick={handleConfirmClick}>Confirm</button>
+                  </div>
+                )}
                 <button>Delete</button>
               </td>
             </tr>
