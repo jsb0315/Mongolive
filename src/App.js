@@ -7,8 +7,8 @@ const socket = io(`http://${process.env.REACT_APP_IP}:3001`, {
 
 function App() {
   const [users, setUsers] = useState([]);
-  const [content, setContent] = useState('');
   const [open, setOpen] = useState(false);
+  const [content, setContent] = useState('');
 
   useEffect(() => {
     // Listen for updates from the server
