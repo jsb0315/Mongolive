@@ -12,17 +12,31 @@ const io = new Server(server);
 const mongoUrl = process.env.MONGO_ADMIN; // MongoDB URL
 const dbName = 'test';
 
+let db; // DB 연결 재사용
+
+async function connectToDatabase() { // DB 연결 함수
+  if (!db) {
+    const client = new MongoClient(mongoUrl);
+    await client.connect();
+    db = client.db(dbName);
+    console.log("DB connected");
+  }
+  return db;
+}
+
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-app.put('/api/users/:id', async (req, res) => {
+app.put('/api/users/:id', async (req, res) => { // PUT 요청 처리
   const { id } = req.params;
   const updatedData = req.body;
+  const timestamp = new Date().toLocaleString();
+  const clientIp = req.ip;
+
+  console.log(`Request received | ${timestamp} | ${clientIp} |`);
 
   try {
-    const client = new MongoClient(mongoUrl);
-    await client.connect();
-    const db = client.db(dbName);
+    const db = await connectToDatabase();
     const collection = db.collection('user');
     const result = await collection.updateOne({ _id: new ObjectId(id) }, { $set: updatedData });
     if (result.modifiedCount === 1) {
@@ -37,29 +51,24 @@ app.put('/api/users/:id', async (req, res) => {
 });
 
 (async () => {
-  const client = new MongoClient(mongoUrl);
-  await client.connect();
-  console.log('Connected to MongoDB');
-  
-  const db = client.db(dbName);
+  const db = await connectToDatabase();
   const collection = db.collection('user');
   
-  // Watch for changes in the 'user' collection
   const changeStream = collection.watch();
   
-  changeStream.on('change', (change) => {
+  changeStream.on('change', (change) => { // 변경 감지 시
     console.log('Change detected:', change.documentKey._id);
     
-    // Emit the updated data to clients
     collection.find().toArray().then((users) => {
-      io.emit('updateUsers', users); // Emit updated user data
+      io.emit('updateUsers', users);
     });
-  });
+  });  
   
   io.on('connection', (socket) => {
-    console.log('A user connected');
+    const timestamp = new Date().toLocaleString();
+    const clientIp = socket.handshake.address;
+    console.log(`A user connected | ${timestamp} | ${clientIp} |`);
     
-    // Send initial data
     collection.find().toArray().then((users) => {
       socket.emit('updateUsers', users);
     });
