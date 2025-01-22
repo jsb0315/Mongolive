@@ -11,21 +11,29 @@ function App() {
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState('');
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
-    // Listen for updates from the server
-    socket.on('updateUsers', (updatedUsers) => {
-      setUsers(updatedUsers);
-    });
-    socket.on('connect_error', (err) => {
-      console.log('Connection Error:', err);
-    });
+    socket.on('updateUsers', handleUpdateUsers);
+    socket.on('connect_error', handleError);
 
-    // Cleanup listener on unmount
     return () => {
-      socket.off('updateUsers');
+      socket.off('updateUsers', handleUpdateUsers);
+      socket.off('connect_error', handleError);
     };
   }, []);
+
+  const handleUpdateUsers = (updatedUsers) => {
+    if (updatedUsers.success) {
+      setUsers(updatedUsers.data);
+    } else {
+      console.error('Failed to fetch users:', updatedUsers.error);
+    }
+  };
+
+  const handleError = (err) => {
+    console.log('Connection Error:', err);
+  };
 
   const handleEditClick = (userId, userContent) => {
     setSelectedUserId(userId);
@@ -37,64 +45,61 @@ function App() {
     try {
       const updatedData = JSON.parse(content);
       await axios.put(`http://${process.env.REACT_APP_IP}:3001/api/users/${selectedUserId}`, updatedData);
-      setOpen(false);
-      setSelectedUserId(null);
-      setContent('');
+      resetEditState();
     } catch (error) {
       console.error('Error updating user:', error);
     }
   };
 
+  const resetEditState = () => {
+    setOpen(false);
+    setSelectedUserId(null);
+    setContent('');
+  };
+
+  const handleSearchClick = () => {
+    socket.emit('searchUsers', query);
+  };
+
+  const handleResetClick = () => {
+    setQuery('');
+    socket.emit('searchUsers', '');
+  };
+
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center'
-    }}>
+    <div style={styles.container}>
       <h1>MongoDB User Management</h1>
-      <table
-        border="1"
-        style={{
-          width: '50vw',
-          borderCollapse: 'collapse',
-          margin: '0 auto',
-          textAlign: 'left',
-        }}
-      >
-        <thead >
+      <div>
+        <input 
+          type="text" 
+          value={query} 
+          onChange={(e) => setQuery(e.target.value)} 
+          placeholder="Search users..." 
+        />
+        <button onClick={handleSearchClick}>Search</button>
+        <button onClick={handleResetClick}>Reset</button>
+      </div>
+      <table border="1" style={styles.table}>
+        <thead>
           <tr>
-          <th style={{ width: '20%' }}>ID</th>
-          <th style={{ width: '10%' }}>Name</th>
-          <th style={{ width: '30%' }}>Details</th>
-          <th style={{ width: '10%' }}>Actions</th>
+            <th style={{width: '20%'}}>ID</th>
+            <th style={{width: '10%'}}>Name</th>
+            <th style={{width: '40%'}}>Details</th>
+            <th style={{width: '30%'}}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {users.map((user) => (
             <tr key={user._id}>
-              <td style={{ verticalAlign: 'top', padding: '10px' }}>{user._id}</td>
-              <td style={{ verticalAlign: 'top', padding: '10px' }}>{user.name}</td>
-              <td style={{ verticalAlign: 'top', padding: '10px' }}>
+              <td style={styles.td}>{user._id}</td>
+              <td style={styles.td}>{user.name}</td>
+              <td style={styles.td}>
                 <details>
                   <summary>View Details</summary>
-                  <div
-                    style={{
-                      margin: '10px 0',
-                      padding: '5px',
-                      backgroundColor: '#f9f9f9',
-                      maxHeight: '30vh',
-                      overflowY: 'auto',
-                      border: '1px solid #ddd',
-                    }}
-                  >
+                  <div style={styles.details}>
                     <strong>JSON Data:</strong>
                     <br />
-                    <code
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        display: 'block',
-                      }}
-                    >
+                    <code style={styles.code}>
                       {JSON.stringify(user, null, 2)}
                     </code>
                   </div>
@@ -103,26 +108,11 @@ function App() {
               <td>
                 <button onClick={() => handleEditClick(user._id, user)}>Edit</button>
                 {open && selectedUserId === user._id && (
-                  <div
-                    style={{
-                      margin: '10px 0',
-                      padding: '5px',
-                      backgroundColor: '#f9f9f9',
-                      maxHeight: '30vh',
-                      overflowY: 'auto',
-                      border: '1px solid #ddd',
-                    }}
-                  >
+                  <div style={styles.details}>
                     <strong>JSON Data:</strong>
                     <br />
                     <textarea
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        display: 'block',
-                        minHeight: '20px',
-                        width: '200px',
-                        overflowY: 'scroll',
-                      }}
+                      style={styles.textarea}
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
                     />
@@ -138,5 +128,43 @@ function App() {
     </div>
   );
 }
+
+const styles = {
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center'
+  },
+  table: {
+    width: '50vw',
+    borderCollapse: 'collapse',
+    margin: '0 auto',
+    textAlign: 'left',
+  },
+  td: {
+    verticalAlign: 'top',
+    padding: '10px',
+  },
+  details: {
+    margin: '10px 0',
+    padding: '5px',
+    backgroundColor: '#f9f9f9',
+    maxHeight: '30vh',
+    overflowY: 'auto',
+    posidisplay: 'flex',
+    border: '1px solid #ddd',
+  },
+  code: {
+    whiteSpace: 'pre-wrap',
+    display: 'block',
+  },
+  textarea: {
+    whiteSpace: 'pre-wrap',
+    display: 'block',
+    minHeight: '100px',
+    width: '200px',
+    overflowY: 'scroll',
+  }
+};
 
 export default App;

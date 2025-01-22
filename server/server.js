@@ -56,29 +56,58 @@ app.put('/api/users/:id', async (req, res) => { // PUT 요청 처리
   
   const changeStream = collection.watch();
   
-  changeStream.on('change', (change) => { // 변경 감지 시
-    console.log('Change detected:', change.documentKey._id);
-    
-    collection.find().toArray().then((users) => {
-      io.emit('updateUsers', users);
-    });
-  });  
+  changeStream.on('change', handleChange);
   
-  io.on('connection', (socket) => {
+  function handleChange(change) {
+    console.log('Change detected:', change.documentKey._id);
+    collection.find().toArray().then((users) => {
+      io.emit('updateUsers', { success: true, error: null, data: users });
+    });
+  }
+  
+  io.on('connection', handleConnection);
+
+  function handleConnection(socket) {
     const timestamp = new Date().toLocaleString();
     const clientIp = socket.handshake.address;
     console.log(`A user connected | ${timestamp} | ${clientIp} |`);
     
     collection.find().toArray().then((users) => {
-      socket.emit('updateUsers', users);
+      socket.emit('updateUsers', { success: true, error: null, data: users });
     });
-    
-    socket.on('disconnect', () => {
-      console.log('A user disconnected');
-    });
-  });
-  
+
+    socket.on('searchUsers', handleSearchUsers(socket));
+    socket.on('disconnect', handleDisconnect);
+  }
+
   server.listen(3001, () => {
     console.log(`Server listening on http://${process.env.REACT_APP_IP}:3001`);
   });
+
+  function handleSearchUsers(socket) {
+    return async (query = '') => {
+      console.log('Received query:', query);
+      try {
+        query = query.length ? JSON.parse(query) : {};
+      } catch (error) {
+        console.error('Invalid query format:', query);
+        return socket.emit('updateUsers', { success: false, error: 'Invalid query format', data: [] });
+      }
+    
+      try {
+        if (query._id) query._id = new ObjectId(query._id);
+        const users = await collection
+          .find(query, { projection: { password: 0, sensitiveField: 0 } }) // 민감한 필드 제외
+          .toArray();
+        socket.emit('updateUsers', { success: true, error: null, data: users });
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        socket.emit('updateUsers', { success: false, error: 'Failed to fetch users', data: [] });
+      }
+    };
+  }
+
+  function handleDisconnect() {
+    console.log('A user disconnected');
+  }
 })();
