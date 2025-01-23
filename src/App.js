@@ -12,6 +12,7 @@ function App() {
   const [content, setContent] = useState('');
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [query, setQuery] = useState('');
+  const [projection, setProjection] = useState('');
 
   useEffect(() => {
     socket.on('updateUsers', handleUpdateUsers);
@@ -58,24 +59,33 @@ function App() {
   };
 
   const handleSearchClick = () => {
-    socket.emit('searchUsers', query);
+    socket.emit('searchUsers', {query: query, projection: projection});
   };
 
   const handleResetClick = () => {
     setQuery('');
+    setProjection('');
     socket.emit('searchUsers', '');
   };
 
   return (
     <div style={styles.container}>
       <h1>MongoDB User Management</h1>
-      <div>
-        <input 
-          type="text" 
-          value={query} 
-          onChange={(e) => setQuery(e.target.value)} 
-          placeholder="Search users..." 
-        />
+      <div style={{display: 'flex', margin: '10px'}}>
+        <div style={{display: 'flex', flexDirection: 'column'}}>
+          <input 
+            type="text" 
+            value={query} 
+            onChange={(e) => setQuery(e.target.value)} 
+            placeholder="Search users..." 
+            />
+          <input 
+            type="text" 
+            value={projection} 
+            onChange={(e) => setProjection(e.target.value)} 
+            placeholder="Projection..." 
+            />
+        </div>
         <button onClick={handleSearchClick}>Search</button>
         <button onClick={handleResetClick}>Reset</button>
       </div>

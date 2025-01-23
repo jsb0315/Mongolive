@@ -85,19 +85,20 @@ app.put('/api/users/:id', async (req, res) => { // PUT 요청 처리
   });
 
   function handleSearchUsers(socket) {
-    return async (query = '') => {
-      console.log('Received query:', query);
+    return async (data = {query: '', projection: ''}) => {
+      console.log('Received query:', data.query, data.projection);
       try {
-        query = query.length ? JSON.parse(query) : {};
+        data.query = data.query.length ? JSON.parse(data.query) : {};
+        data.projection = data.projection.length ? JSON.parse(data.projection) : {};
       } catch (error) {
-        console.error('Invalid query format:', query);
+        console.error('Invalid query format:', data.query);
         return socket.emit('updateUsers', { success: false, error: 'Invalid query format', data: [] });
       }
     
       try {
-        if (query._id) query._id = new ObjectId(query._id);
+        if (data.query._id) data.query._id = new ObjectId(data.query._id);
         const users = await collection
-          .find(query, { projection: { password: 0, sensitiveField: 0 } }) // 민감한 필드 제외
+          .find(data.query, { projection: data.projection })
           .toArray();
         socket.emit('updateUsers', { success: true, error: null, data: users });
       } catch (error) {
