@@ -15,21 +15,38 @@ function App() {
   const [projection, setProjection] = useState('');
 
   useEffect(() => {
+    const handleConnect = () => {
+      console.log('Connected to server');
+  
+      // 세션 스토리지에서 데이터 가져오기
+      const savedQuery = sessionStorage.getItem('query') || ''; 
+      const savedProjection = sessionStorage.getItem('projection') || '';
+  
+      setQuery(savedQuery);
+      setProjection(savedProjection);
+  
+      try {
+        socket.emit('searchUsers', { query: savedQuery, projection: savedProjection });
+        console.log('------------------');
+      } catch (error) {
+        console.error('Invalid data in sessionStorage:', error);
+      }
+    };
+  
+    socket.on('connect', handleConnect);
     socket.on('updateUsers', handleUpdateUsers);
     socket.on('connect_error', handleError);
-
+  
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('updateUsers', handleUpdateUsers);
       socket.off('connect_error', handleError);
     };
   }, []);
 
   const handleUpdateUsers = (updatedUsers) => {
-    if (updatedUsers.success) {
-      setUsers(updatedUsers.data);
-    } else {
-      console.error('Failed to fetch users:', updatedUsers.error);
-    }
+    updatedUsers.success && setUsers(updatedUsers.data);
+    updatedUsers.error && console.error('Failed to fetch users:', updatedUsers.error);
   };
 
   const handleError = (err) => {
@@ -59,13 +76,17 @@ function App() {
   };
 
   const handleSearchClick = () => {
-    socket.emit('searchUsers', {query: query, projection: projection});
+    sessionStorage.setItem('query', query);
+    sessionStorage.setItem('projection', projection);
+    socket.emit('searchUsers', { query: query, projection: projection });
   };
 
   const handleResetClick = () => {
     setQuery('');
     setProjection('');
-    socket.emit('searchUsers', '');
+    sessionStorage.setItem('query', '');
+    sessionStorage.setItem('projection', '');
+    socket.emit('searchUsers', { query: '', projection: '' });
   };
 
   return (
@@ -133,6 +154,7 @@ function App() {
               </td>
             </tr>
           ))}
+          {!users.length && <tr><td colSpan="4" style={{padding: 30, textAlign: 'center'}}>Result not found</td></tr>}
         </tbody>
       </table>
     </div>
