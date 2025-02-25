@@ -52,6 +52,22 @@ app.put('/api/users/:id', async (req, res) => { // PUT 요청 처리
   }
 });
 
+function findDeepestPaths(obj, path = []) { // 객체의 최하위 경로 찾기
+  let paths = [];
+
+  for (const key in obj) {
+      if (typeof obj[key] === 'object' && obj[key] !== null) {
+          // 재귀적으로 탐색
+          const subPaths = findDeepestPaths(obj[key], [...path, key]);
+          paths.push(...subPaths);
+      } else {
+          // 최하위 값이면 경로 저장
+          paths.push([...path, key]);
+      }
+  }
+  return paths;
+}
+
 (async () => {
   const db = await connectToDatabase();
   const collection = db.collection('user');
@@ -62,6 +78,10 @@ app.put('/api/users/:id', async (req, res) => { // PUT 요청 처리
   
   async function handleChange(change) {
     console.log('Change detected:', change.documentKey._id);
+    const updatedFields = findDeepestPaths(change.updateDescription.updatedFields);
+
+    console.log('Change info:', change);
+    console.log('Updated Paths:', updatedFields);
   
     for (const [socketId, data] of clientInterestMap.entries()) {
       try {
