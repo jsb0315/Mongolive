@@ -1,26 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 import axios from 'axios';
 
-const socket = io(`http://${process.env.REACT_APP_IP}:3001`, {
+interface User {
+  _id: string;
+  name: string;
+  [key: string]: any;
+}
+
+interface UpdateUsersResponse {
+  success?: boolean;
+  data?: User[];
+  error?: string;
+}
+
+interface SearchParams {
+  query: string;
+  projection: string;
+}
+
+const socket: Socket = io(`http://${process.env.REACT_APP_IP}:3001`, {
   transports: ['websocket']
 });
 
 function App() {
-  const [users, setUsers] = useState([]);
-  const [open, setOpen] = useState(false);
-  const [content, setContent] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState(null);
-  const [query, setQuery] = useState('');
-  const [projection, setProjection] = useState('');
+  const [users, setUsers] = useState<User[]>([]);
+  const [open, setOpen] = useState<boolean>(false);
+  const [content, setContent] = useState<string>('');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [query, setQuery] = useState<string>('');
+  const [projection, setProjection] = useState<string>('');
 
   useEffect(() => {
-    const handleConnect = () => {
+    const handleConnect = (): void => {
       console.log('Connected to server');
   
       // 세션 스토리지에서 데이터 가져오기
-      const savedQuery = sessionStorage.getItem('query') || ''; 
-      const savedProjection = sessionStorage.getItem('projection') || '';
+      const savedQuery: string = sessionStorage.getItem('query') || ''; 
+      const savedProjection: string = sessionStorage.getItem('projection') || '';
   
       setQuery(savedQuery);
       setProjection(savedProjection);
@@ -44,56 +61,24 @@ function App() {
     };
   }, []);
 
-
-  // useEffect(() => {
-  //   const handleConnect = () => {
-  //     console.log('Connected to server');
-  
-  //     // 세션 스토리지에서 데이터 가져오기
-  //     const savedQuery = sessionStorage.getItem('query') || ''; 
-  //     const savedProjection = sessionStorage.getItem('projection') || '';
-  
-  //     setQuery(savedQuery);
-  //     setProjection(savedProjection);
-  
-  //     try {
-  //       socket.emit('searchUsers', { query: savedQuery, projection: savedProjection });
-  //       console.log('------------------');
-  //     } catch (error) {
-  //       console.error('Invalid data in sessionStorage:', error);
-  //     }
-  //   };
-  
-  //   socket.on('connect', handleConnect);
-  //   socket.on('updateUsers', handleUpdateUsers);
-  //   socket.on('connect_error', handleError);
-  
-  //   return () => {
-  //     socket.off('connect', handleConnect);
-  //     socket.off('updateUsers', handleUpdateUsers);
-  //     socket.off('connect_error', handleError);
-  //   };
-  // }, []);
-  
-
-  const handleUpdateUsers = (updatedUsers) => {
-    updatedUsers.success && setUsers(updatedUsers.data);
+  const handleUpdateUsers = (updatedUsers: UpdateUsersResponse): void => {
+    updatedUsers.success && setUsers(updatedUsers.data || []);
     updatedUsers.error && console.error('Failed to fetch users:', updatedUsers.error);
   };
 
-  const handleError = (err) => {
+  const handleError = (err: Error): void => {
     console.log('Connection Error:', err);
   };
 
-  const handleEditClick = (userId, userContent) => {
+  const handleEditClick = (userId: string, userContent: User): void => {
     setSelectedUserId(userId);
     setContent(JSON.stringify(userContent, null, 2));
     setOpen(!open);
   };
 
-  const handleConfirmClick = async () => {
+  const handleConfirmClick = async (): Promise<void> => {
     try {
-      const updatedData = JSON.parse(content);
+      const updatedData: User = JSON.parse(content);
       await axios.put(`http://${process.env.REACT_APP_IP}:3001/api/users/${selectedUserId}`, updatedData);
       resetEditState();
     } catch (error) {
@@ -101,19 +86,19 @@ function App() {
     }
   };
 
-  const resetEditState = () => {
+  const resetEditState = (): void => {
     setOpen(false);
     setSelectedUserId(null);
     setContent('');
   };
 
-  const handleSearchClick = () => {
+  const handleSearchClick = (): void => {
     sessionStorage.setItem('query', query);
     sessionStorage.setItem('projection', projection);
     socket.emit('searchUsers', { query: query, projection: projection });
   };
 
-  const handleResetClick = () => {
+  const handleResetClick = (): void => {
     setQuery('');
     setProjection('');
     sessionStorage.setItem('query', '');
@@ -129,20 +114,20 @@ function App() {
           <input 
             type="text" 
             value={query} 
-            onChange={(e) => setQuery(e.target.value)} 
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} 
             placeholder="Search users..." 
             />
           <input 
             type="text" 
             value={projection} 
-            onChange={(e) => setProjection(e.target.value)} 
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProjection(e.target.value)} 
             placeholder="Projection..." 
             />
         </div>
         <button onClick={handleSearchClick}>Search</button>
         <button onClick={handleResetClick}>Reset</button>
       </div>
-      <table border="1" style={styles.table}>
+      <table style={styles.table}>
         <thead>
           <tr>
             <th style={{width: '20%'}}>ID</th>
@@ -152,7 +137,7 @@ function App() {
           </tr>
         </thead>
         <tbody>
-          {users.map((user) => (
+          {users.map((user: User) => (
             <tr key={user._id}>
               <td style={styles.td}>{user._id}</td>
               <td style={styles.td}>{user.name}</td>
@@ -177,7 +162,7 @@ function App() {
                     <textarea
                       style={styles.textarea}
                       value={content}
-                      onChange={(e) => setContent(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setContent(e.target.value)}
                     />
                     <button onClick={handleConfirmClick}>Confirm</button>
                   </div>
@@ -186,14 +171,14 @@ function App() {
               </td>
             </tr>
           ))}
-          {!users.length && <tr><td colSpan="4" style={{padding: 30, textAlign: 'center'}}>Result not found</td></tr>}
+          {!users.length && <tr><td colSpan={4} style={{padding: 30, textAlign: 'center'}}>Result not found</td></tr>}
         </tbody>
       </table>
     </div>
   );
 }
 
-const styles = {
+const styles: { [key: string]: React.CSSProperties } = {
   container: {
     display: 'flex',
     flexDirection: 'column',
@@ -204,6 +189,7 @@ const styles = {
     borderCollapse: 'collapse',
     margin: '0 auto',
     textAlign: 'left',
+    border: '1px solid #000'
   },
   td: {
     verticalAlign: 'top',
@@ -215,7 +201,6 @@ const styles = {
     backgroundColor: '#f9f9f9',
     maxHeight: '30vh',
     overflowY: 'auto',
-    posidisplay: 'flex',
     border: '1px solid #ddd',
   },
   code: {
