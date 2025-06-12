@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global styles */
+body {
+  @apply bg-gray-100 text-gray-900 font-sans;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  @apply font-bold;
+}
+
+a {
+  @apply text-blue-600 hover:text-blue-500;
+}
+
+button {
+  @apply bg-blue-600 text-white font-semibold py-2 px-4 rounded hover:bg-blue-500;
+}
+
+input, textarea {
+  @apply border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+
+table {
+  @apply min-w-full border-collapse;
+}
+
+th, td {
+  @apply border border-gray-300 p-2;
+}
+
+th {
+  @apply bg-gray-200 font-semibold;
+}
+
+.details {
+  @apply bg-gray-50 p-4 rounded-md shadow;
+}
