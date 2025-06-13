@@ -227,12 +227,11 @@ const CollectionExplorer: React.FC = () => {
 
     return (
       <div className='flex-1 truncate min-w-0'>
-        <span className={`text-xs px-2 py-1 rounded ${
-          field.type === 'string' ? 'bg-green-100 text-green-600' :
+        <span className={`text-xs px-2 py-1 rounded ${field.type === 'string' ? 'bg-green-100 text-green-600' :
           field.type === 'number' ? 'bg-blue-100 text-blue-600' :
-          field.type === 'boolean' ? 'bg-yellow-100 text-yellow-600' :
-          'bg-gray-100 text-gray-600'
-        }`}>
+            field.type === 'boolean' ? 'bg-yellow-100 text-yellow-600' :
+              'bg-gray-100 text-gray-600'
+          }`}>
           {field.type}
         </span>
         <p className="text-sm mt-1 truncate text-ellipsis">{String(field.value)}</p>
@@ -253,23 +252,23 @@ const CollectionExplorer: React.FC = () => {
         }}
       >
         <div className="p-3 border-b border-gray-200 bg-gray-50">
-  <div className="flex items-center justify-between">
-    <h3 className="text-sm font-semibold text-gray-900 flex items-center truncate flex-1 min-w-0">
-      {icon}
-      <span className="truncate">{title}</span>
-    </h3>
-    {depth > 0 && (
-      <button
-        onClick={() => handleBackNavigation(depth - 1)}
-        className="p-1 hover:bg-gray-200 rounded transition-colors duration-200 flex-shrink-0 ml-2"
-      >
-        <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
-    )}
-  </div>
-</div>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center truncate flex-1 min-w-0">
+              {icon}
+              <span className="truncate">{title}</span>
+            </h3>
+            {depth > 0 && (
+              <button
+                onClick={() => handleBackNavigation(depth - 1)}
+                className="p-1 hover:bg-gray-200 rounded transition-colors duration-200 flex-shrink-0 ml-2"
+              >
+                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
         <div className="flex flex-col overflow-y-auto p-2 max-h-full overflow-x-hidden">
           {fields.length === 0 ? (
             <div className="p-4 text-center text-gray-500 text-sm">
@@ -383,22 +382,22 @@ const CollectionExplorer: React.FC = () => {
 
       {/* 메인 컨텐츠 영역 - 동적 레이아웃 */}
       <div className="Collection_Panel overflow-hidden min-h-0 h-full w-full relative">
-      <div className="Collection_Panel min-h-0 h-full"><div
-          className="flex transition-all duration-500 ease-in-out h-full gap-4  absolute right-0 top-0"
+        <div
+          className="flex transition-all duration-500 ease-in-out h-full gap-4"
           style={{
-            width: `calc(100% + ${currentDepth * 25}% + ${currentDepth * 0.5}rem)`,
-            // transform: `translateX(calc(-1 * ( ${100*currentDepth * (1/(currentDepth+4))}% + ${currentDepth * 0.35}rem )))`
+            width: `calc(100% + ${currentDepth * 25}%)`,
+            transform: `translateX(calc(-1 * ( ${currentDepth * 25}%))`
           }}
         >
           {/* 첫 번째 섹션: 컬렉션 목록 */}
-          <div className={`flex-[1_1_0%] flex-shrink-0`}>
+          <div className={`flex-[1_1_0%] overflow-x-hidden`}>
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
               <div className="p-3 border-b border-gray-200 bg-gray-50">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center">
                   <svg className="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
-                  Collections ({collections.length})
+                  <span className="truncate">Collections ({collections.length})</span>
                 </h3>
               </div>
               <div className="flex flex-col overflow-y-auto p-2 max-h-full">
@@ -410,7 +409,7 @@ const CollectionExplorer: React.FC = () => {
                       } ${selectedCollection === collection.name
                         ? 'bg-green-50 border border-green-200 shadow-sm'
                         : 'hover:bg-gray-50 border border-transparent'
-                      }`}
+                      } flex-1 truncate min-w-0`}
                   >
                     <div className="flex items-center justify-between relative">
                       <h4 className="font-medium text-gray-900 text-sm">{collection.name}</h4>
@@ -431,14 +430,14 @@ const CollectionExplorer: React.FC = () => {
           </div>
 
           {/* 두 번째 섹션: 문서 목록 */}
-          <div className={`flex-[1_1_0%] flex-shrink-0`}>
+          <div className={`flex-[1_1_0%] overflow-x-hidden`}>
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
               <div className="p-3 border-b border-gray-200 bg-gray-50">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center">
                   <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  Documents {selectedCollection && `(${documents.length})`}
+                  <span className="truncate">Documents {selectedCollection && `(${documents.length})`}</span>
                 </h3>
               </div>
               <div className="flex flex-col overflow-y-auto p-2 max-h-full">
@@ -489,7 +488,7 @@ const CollectionExplorer: React.FC = () => {
             return (
               <div
                 key={index}
-                className={`${isLastSection ? 'flex-[2_1_0%]' : 'flex-[1_1_0%]'} flex-shrink-0 overflow-x-hidden text-ellipsis`}
+                className={`${isLastSection ? 'flex-[2_1_0%]' : 'flex-[1_1_0%]'} overflow-x-hidden`}
               >
                 {renderFieldSection(
                   index,
@@ -505,7 +504,7 @@ const CollectionExplorer: React.FC = () => {
           })}
         </div>
       </div>
-    </div></div>
+    </div>
   );
 };
 

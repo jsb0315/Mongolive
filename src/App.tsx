@@ -11,24 +11,53 @@ import PerformanceMetrics from './components/features/PerformanceMetrics';
 import AuthSystem from './components/features/AuthSystem';
 import { DatabaseProvider } from './contexts/DatabaseContext';
 
-import RecursivePanel from './test';
+import JsonExplorer from './test';
 
-const testdata = {
-  a: 1,
-  b: [1, 2],
-  c: {
-    c_c: {
-      c_C_C: 123,
-      js: {
-        react: "good",
-        angular: "bad",
-        vue: {
-          compositionAPI: true
+
+const sampleData = {
+    a: 1,
+    b: [1, 2, 3],
+    c: {
+      c_c: {
+        c_C_C: 123,
+        js: {
+          framework: 'React',
+          language: 'TypeScript',
+          version: '18.0',
+          nested: {
+            deep: {
+              value: 'Hello World from deep nested object',
+              number: 42,
+              boolean: true,
+              array: [
+                { id: 1, name: 'Item 1' },
+                { id: 2, name: 'Item 2' },
+                { id: 3, name: 'Item 3' }
+              ],
+              moreNested: {
+                level1: {
+                  level2: {
+                    level3: {
+                      finalValue: 'You found me!'
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
+      },
+      another: {
+        test: 'value',
+        numbers: [10, 20, 30, 40, 50]
       }
-    }
-  }
-};
+    },
+    simpleArray: [1, 2, 3, 4, 5],
+    complexArray: [
+      { name: 'Object 1', value: 100 },
+      { name: 'Object 2', value: 200 }
+    ]
+  };
 
 interface User {
   _id: string;
@@ -47,9 +76,9 @@ interface SearchParams {
   projection: string;
 }
 
-const socket: Socket = io(`http://${process.env.REACT_APP_IP}:3001`, {
-  transports: ['websocket']
-});
+// const socket: Socket = io(`http://${process.env.REACT_APP_IP}:3001`, {
+//   transports: ['websocket']
+// });
 
 type ActiveTab = 'collections' | 'changestream' | 'query' | 'clients' | 'performance' | 'auth';
 
@@ -64,33 +93,33 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   useEffect(() => {
-    const handleConnect = (): void => {
-      console.log('Connected to server');
+    // const handleConnect = (): void => {
+    //   console.log('Connected to server');
   
-      // 세션 스토리지에서 데이터 가져오기
-      const savedQuery: string = sessionStorage.getItem('query') || ''; 
-      const savedProjection: string = sessionStorage.getItem('projection') || '';
+    //   // 세션 스토리지에서 데이터 가져오기
+    //   const savedQuery: string = sessionStorage.getItem('query') || ''; 
+    //   const savedProjection: string = sessionStorage.getItem('projection') || '';
   
-      setQuery(savedQuery);
-      setProjection(savedProjection);
+    //   setQuery(savedQuery);
+    //   setProjection(savedProjection);
   
-      try {
-        socket.emit('searchUsers', { query: savedQuery, projection: savedProjection });
-        console.log('------------------');
-      } catch (error) {
-        console.error('Invalid data in sessionStorage:', error);
-      }
-    };
+    //   try {
+    //     socket.emit('searchUsers', { query: savedQuery, projection: savedProjection });
+    //     console.log('------------------');
+    //   } catch (error) {
+    //     console.error('Invalid data in sessionStorage:', error);
+    //   }
+    // };
   
-    socket.on('connect', handleConnect);
-    socket.on('updateUsers', handleUpdateUsers);
-    socket.on('connect_error', handleError);
+    // socket.on('connect', handleConnect);
+    // socket.on('updateUsers', handleUpdateUsers);
+    // socket.on('connect_error', handleError);
   
-    return () => {
-      socket.off('connect', handleConnect);
-      socket.off('updateUsers', handleUpdateUsers);
-      socket.off('connect_error', handleError);
-    };
+    // return () => {
+    //   socket.off('connect', handleConnect);
+    //   socket.off('updateUsers', handleUpdateUsers);
+    //   socket.off('connect_error', handleError);
+    // };
   }, []);
 
   const handleUpdateUsers = (updatedUsers: UpdateUsersResponse): void => {
@@ -124,26 +153,26 @@ function App() {
     setContent('');
   };
 
-  const handleSearchClick = (): void => {
-    sessionStorage.setItem('query', query);
-    sessionStorage.setItem('projection', projection);
-    socket.emit('searchUsers', { query: query, projection: projection });
-  };
+  // const handleSearchClick = (): void => {
+  //   sessionStorage.setItem('query', query);
+  //   sessionStorage.setItem('projection', projection);
+  //   socket.emit('searchUsers', { query: query, projection: projection });
+  // };
 
-  const handleResetClick = (): void => {
-    setQuery('');
-    setProjection('');
-    sessionStorage.setItem('query', '');
-    sessionStorage.setItem('projection', '');
-    socket.emit('searchUsers', { query: '', projection: '' });
-  };
+  // const handleResetClick = (): void => {
+  //   setQuery('');
+  //   setProjection('');
+  //   sessionStorage.setItem('query', '');
+  //   sessionStorage.setItem('projection', '');
+  //   socket.emit('searchUsers', { query: '', projection: '' });
+  // };
 
   const renderContent = () => {
     switch (activeTab) {
       case 'collections':
         return <CollectionExplorer />;
       case 'changestream':
-        return <RecursivePanel data={testdata} />;
+        return <JsonExplorer data={sampleData} />;
       case 'query':
         return <QueryExecutor />;
       case 'clients':
