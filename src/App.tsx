@@ -1,6 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 import axios from 'axios';
+import Sidebar from './components/layout/Sidebar';
+import Header from './components/layout/Header';
+import CollectionExplorer from './components/features/CollectionExplorer';
+import ChangeStreamLogs from './components/features/ChangeStreamLogs';
+import QueryExecutor from './components/features/QueryExecutor';
+import ClientMonitoring from './components/features/ClientMonitoring';
+import PerformanceMetrics from './components/features/PerformanceMetrics';
+import AuthSystem from './components/features/AuthSystem';
+import { DatabaseProvider } from './contexts/DatabaseContext';
+
+import RecursivePanel from './test';
+
+const testdata = {
+  a: 1,
+  b: [1, 2],
+  c: {
+    c_c: {
+      c_C_C: 123,
+      js: {
+        react: "good",
+        angular: "bad",
+        vue: {
+          compositionAPI: true
+        }
+      }
+    }
+  }
+};
 
 interface User {
   _id: string;
@@ -23,6 +51,8 @@ const socket: Socket = io(`http://${process.env.REACT_APP_IP}:3001`, {
   transports: ['websocket']
 });
 
+type ActiveTab = 'collections' | 'changestream' | 'query' | 'clients' | 'performance' | 'auth';
+
 function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState<boolean>(false);
@@ -30,6 +60,8 @@ function App() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [query, setQuery] = useState<string>('');
   const [projection, setProjection] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('collections');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   useEffect(() => {
     const handleConnect = (): void => {
@@ -106,114 +138,42 @@ function App() {
     socket.emit('searchUsers', { query: '', projection: '' });
   };
 
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'collections':
+        return <CollectionExplorer />;
+      case 'changestream':
+        return <RecursivePanel data={testdata} />;
+      case 'query':
+        return <QueryExecutor />;
+      case 'clients':
+        return <ClientMonitoring />;
+      case 'performance':
+        return <PerformanceMetrics />;
+      case 'auth':
+        return <AuthSystem onAuthenticated={() => {}} isSettings={true} />;
+      default:
+        return <CollectionExplorer />;
+    }
+  };
+
+  if (!isAuthenticated) {
+    return <AuthSystem onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
+
   return (
-    <div style={styles.container}>
-      <h1>MongoDB User Management</h1>
-      <div style={{display: 'flex', margin: '10px'}}>
-        <div style={{display: 'flex', flexDirection: 'column'}}>
-          <input 
-            type="text" 
-            value={query} 
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} 
-            placeholder="Search users..." 
-            />
-          <input 
-            type="text" 
-            value={projection} 
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProjection(e.target.value)} 
-            placeholder="Projection..." 
-            />
-        </div>
-        <button onClick={handleSearchClick}>Search</button>
-        <button onClick={handleResetClick}>Reset</button>
+    <DatabaseProvider>
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header onLogout={() => setIsAuthenticated(false)} />
+        <main className="flex-1 overflow-auto p-6">
+          {renderContent()}
+        </main>
       </div>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th style={{width: '20%'}}>ID</th>
-            <th style={{width: '10%'}}>Name</th>
-            <th style={{width: '40%'}}>Details</th>
-            <th style={{width: '30%'}}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user: User) => (
-            <tr key={user._id}>
-              <td style={styles.td}>{user._id}</td>
-              <td style={styles.td}>{user.name}</td>
-              <td style={styles.td}>
-                <details>
-                  <summary>View Details</summary>
-                  <div style={styles.details}>
-                    <strong>JSON Data:</strong>
-                    <br />
-                    <code style={styles.code}>
-                      {JSON.stringify(user, null, 2)}
-                    </code>
-                  </div>
-                </details>
-              </td>
-              <td>
-                <button onClick={() => handleEditClick(user._id, user)}>Edit</button>
-                {open && selectedUserId === user._id && (
-                  <div style={styles.details}>
-                    <strong>JSON Data:</strong>
-                    <br />
-                    <textarea
-                      style={styles.textarea}
-                      value={content}
-                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setContent(e.target.value)}
-                    />
-                    <button onClick={handleConfirmClick}>Confirm</button>
-                  </div>
-                )}
-                <button>Delete</button>
-              </td>
-            </tr>
-          ))}
-          {!users.length && <tr><td colSpan={4} style={{padding: 30, textAlign: 'center'}}>Result not found</td></tr>}
-        </tbody>
-      </table>
     </div>
+    </DatabaseProvider>
   );
 }
-
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center'
-  },
-  table: {
-    width: '50vw',
-    borderCollapse: 'collapse',
-    margin: '0 auto',
-    textAlign: 'left',
-    border: '1px solid #000'
-  },
-  td: {
-    verticalAlign: 'top',
-    padding: '10px',
-  },
-  details: {
-    margin: '10px 0',
-    padding: '5px',
-    backgroundColor: '#f9f9f9',
-    maxHeight: '30vh',
-    overflowY: 'auto',
-    border: '1px solid #ddd',
-  },
-  code: {
-    whiteSpace: 'pre-wrap',
-    display: 'block',
-  },
-  textarea: {
-    whiteSpace: 'pre-wrap',
-    display: 'block',
-    minHeight: '100px',
-    width: '200px',
-    overflowY: 'scroll',
-  }
-};
 
 export default App;
