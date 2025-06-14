@@ -166,7 +166,7 @@ const JsonExplorer: React.FC<JsonExplorerProps> = ({ data }) => {
     // *뷰포트: [ ]
     // 3-1. 섹션 전체 Div 이동: TMP1|[N|N+1|N+2]|TMP2 → TMP1|N|[N+1|N+2|TMP2]
     if (containerRef.current) {
-      containerRef.current.style.transform = 'translateX(20%)';
+      containerRef.current.style.transform = 'translateX(0%)';
     }
     // 3-2. 섹션 순서 물리적 변경: TMP1|N|[N+1|N+2|TMP2] → N|N+1|[N+2|TMP2|TMP1]
     setSections(prevSections => {
@@ -180,7 +180,7 @@ const JsonExplorer: React.FC<JsonExplorerProps> = ({ data }) => {
       setTransitionAllowed(true);
       // 4. Transform 초기화: N|N+1|[N+2|TMP2|TMP1] → N|[N+1|N+2|TMP2]|TMP1
       if (containerRef.current) {
-        containerRef.current.style.transform = 'translateX(0)';
+        containerRef.current.style.transform = 'translateX(-20%)';
       }
 
       setTimeout(() => {
@@ -212,12 +212,12 @@ const JsonExplorer: React.FC<JsonExplorerProps> = ({ data }) => {
         setIsAnimating(false);
         setTransitionAllowed(false);
         setAnimationDirection(null);
-      }, 200);  // 데이터 매핑 지연
-    }, 100); // 돌아가기까지
+      }, 250);  // 데이터 매핑 지연
+    }, 10); // 돌아가기까지
   };
 
   // Backward 애니메이션 (N 섹션 클릭)
-const handleBackwardAnimation = (item: DataItem) => {
+  const handleBackwardAnimation = (item: DataItem) => {
     if (navigationStack.length <= 1) return;
     console.log('handleBackwardAnimation', item);
     // item.path의 상위 key를 찾아 newData로 설정
@@ -225,10 +225,10 @@ const handleBackwardAnimation = (item: DataItem) => {
     let parentValue = data;
     for (const key of parentPath) {
       if (parentValue && typeof parentValue === 'object') {
-      parentValue = parentValue[key];
+        parentValue = parentValue[key];
       } else {
-      parentValue = undefined;
-      break;
+        parentValue = undefined;
+        break;
       }
     }
     const newData = parseData(parentValue, parentPath);
@@ -244,7 +244,7 @@ const handleBackwardAnimation = (item: DataItem) => {
     // *뷰포트: [ ]
     // 2-1. 섹션 Div 전체 이동: TMP1|[N|N+1|N+2]|TMP2 → [TMP1|N|N+1]|N+2|TMP2
     if (containerRef.current) {
-      containerRef.current.style.transform = 'translateX(-20%)';
+      containerRef.current.style.transform = 'translateX(-40%)';
     }
     // 2-2. 섹션 순서 물리적 변경 TMP1|N|[N+1|N+2|TMP2] → TMP2|TMP1|[N|N+1|N+2]
     setSections(prevSections => {
@@ -259,7 +259,7 @@ const handleBackwardAnimation = (item: DataItem) => {
 
       // 3. Transform 초기화: TMP2|TMP1|[N|N+1|N+2] → TMP2|[TMP1|N|N+1]|N+2
       if (containerRef.current) {
-        containerRef.current.style.transform = 'translateX(0)';
+        containerRef.current.style.transform = 'translateX(-20%)';
       }
 
       setTimeout(() => {
@@ -282,7 +282,7 @@ const handleBackwardAnimation = (item: DataItem) => {
               return { ...section, ...nData, id: 'N+1', isTmp: false };
             } else if (section.id === 'N+2') {
               const nPlus1Data = prevSections.find(s => s.id === 'N+1')!;
-              return { ...section, ...nPlus1Data, id: 'N+2', isEmpty: true };
+              return { ...section, ...nPlus1Data, id: 'N+2' };
             } else if (section.id === 'TMP1') {
               return { ...section, data: [], title: 'TMP2', isEmpty: true };
             }
@@ -293,32 +293,35 @@ const handleBackwardAnimation = (item: DataItem) => {
         setIsAnimating(false);
         setTransitionAllowed(false);
         setAnimationDirection(null);
-      }, 200);  // 데이터 매핑 지연
-    }, 100); // 돌아가기까지
+      }, 250);  // 데이터 매핑 지연
+    }, 10); // 돌아가기까지
   };
 
   // 키 클릭 핸들러
   const handleKeyClick = (sectionId: string, item: DataItem) => {
     if (isAnimating) return;
-
     if (sectionId === 'N') {
       // N 섹션 클릭
+      // 자식 O Root O -> N+1 렌더링, N+2 초기화
+      // 자식 O Root X -> back, N+1 렌더링
+      // 자식 X Root O -> Pass
+      // 자식 X Root X -> back
       if (item.hasChildren) {
-        // 자식이 있으면 N+1에 렌더링
         const newData = parseData(item.value, item.path);
         updateSection('N+1', newData, item.key, item.path);
-        if (transitionAllowed) clearSection('N+2');
+        if (item.path.length === 1) {
+          // Root에서 자식 클릭: N+2 초기화
+          clearSection('N+2');
+        } else {
+          // Root가 아니면 뒤로가기
+          handleBackwardAnimation(item);
+        }
       } else {
-        clearSection('N+1', 'Select a key');
-        clearSection('N+2', 'Select a key');
+        // 자식이 없고 Root가 아니면 뒤로가기
+        if (item.path.length !== 1) {
+          handleBackwardAnimation(item);
+        }
       }
-      if (navigationStack.length > 1) {
-        // 상위가 있으면 backward
-        handleBackwardAnimation(item);
-      } else {
-        if (transitionAllowed) clearSection('N+2');    
-      }
-
     } else if (sectionId === 'N+1') {
       // N+1 섹션 클릭 → N+2에 데이터 렌더링
       if (item.hasChildren) {
@@ -333,32 +336,35 @@ const handleBackwardAnimation = (item: DataItem) => {
       }
     }
   };
-  console.log(navigationStack);
   return (
     <div className="w-full h-full bg-gray-100 rounded-lg overflow-hidden relative">
       <div
         ref={containerRef}
         className={`flex h-full ${transitionAllowed && 'transition-transform duration-300 ease-in-out'}`}
-        style={{ width: `${sections.length * 20}%` }}
+        style={{ 
+          width: `${100*10/6}%`,
+          transform: 'translateX(-20%)'
+         }}
       >
+        {/* 섹션 렌더링 */}
         {sections.map((section, index) => {
           const isViewport = index >= 1 && index <= 3;
           const viewportIndex = isViewport ? index - 1 : -1;
 
           // Flex 클래스 결정
-          let flexClass = 'flex-1';
+          let flexClass = 'w-[20%]';
           if (isViewport) {
-            if (viewportIndex === 0) flexClass = 'flex-1';      // N: 1
-            else if (viewportIndex === 1) flexClass = 'flex-1'; // N+1: 1  
-            else if (viewportIndex === 2) flexClass = 'flex-[2]'; // N+2: 2
+            if (viewportIndex === 0) flexClass = 'w-[20%]';      // N
+            else if (viewportIndex === 1) flexClass = isAnimating ? 'w-[20%]' : 'w-[20%]'; // N+1
+            else if (viewportIndex === 2) flexClass = isAnimating ? 'w-[20%]' : 'w-[20%]'; // N+2
           }
 
           return (
             <div
               key={`${section.id}-${index}`}
-              className={`${flexClass} bg-white border-r border-gray-200 last:border-r-0 flex flex-col ${section.isTmp ? 'opacity-30 bg-gray-50' : 'opacity-100'
-                }`}
-              style={{ width: '20%', minWidth: '20%' }}
+              className={` transition-[width] duration-300 ease-in-out ${flexClass} bg-white border-r border-gray-200 last:border-r-0 flex flex-col ${section.isTmp ? 'opacity-30 bg-gray-50' : 'opacity-100'  
+              }`}
+              // style={{ transition: 'width 0.3s ease-in-out' }}
             >
               {/* 헤더 */}
               <div className={`p-3 border-b border-gray-200 flex-shrink-0 ${section.isTmp ? 'bg-orange-50' : 'bg-gray-50'
@@ -444,7 +450,7 @@ const handleBackwardAnimation = (item: DataItem) => {
 
                             {/* 값 미리보기 */}
                             <div className="text-sm text-gray-600">
-                              <div className="truncate" title={formatValue(item)}>
+                              <div className="text-sm text-gray-600 truncate" title={formatValue(item)}>
                                 {formatValue(item)}
                               </div>
                             </div>

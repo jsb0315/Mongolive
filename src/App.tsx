@@ -80,7 +80,7 @@ interface SearchParams {
 //   transports: ['websocket']
 // });
 
-type ActiveTab = 'collections' | 'changestream' | 'query' | 'clients' | 'performance' | 'auth';
+type ActiveTab = 'collections' | 'collections2' | 'changestream' | 'query' | 'clients' | 'performance' | 'auth';
 
 function App() {
   const [users, setUsers] = useState<User[]>([]);
@@ -171,8 +171,10 @@ function App() {
     switch (activeTab) {
       case 'collections':
         return <CollectionExplorer />;
-      case 'changestream':
+      case 'collections2':
         return <JsonExplorer data={sampleData} />;
+      case 'changestream':
+        return <ChangeStreamLogs />;
       case 'query':
         return <QueryExecutor />;
       case 'clients':
