@@ -200,6 +200,10 @@ export const mockDocuments: { [key: string]: MongoDocument[] } = {
         }
       },
       addresses: [
+        123,
+        {
+          test: 123
+        },
         {
           _id: new ObjectId('60a7b7e1c5f4a2b3d4e5f601'),
           type: 'home',
@@ -234,6 +238,11 @@ export const mockDocuments: { [key: string]: MongoDocument[] } = {
           },
           createdAt: new Date('2024-01-16T09:20:00Z')
         }
+      ],
+      test : [
+        {hello: 'world'},
+        {hello: 'universe'},
+        {hello: 'galaxy'}
       ],
       preferences: {
         language: 'en-US',

@@ -19,6 +19,33 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
     { id: 'auth', label: 'Authentication', icon: '🔐' },
   ];
 
+  // 윈도우 크기 변화 감지
+  useEffect(() => {
+    const handleResize = () => {
+      const windowWidth = window.innerWidth;
+      if (windowWidth <= 1200) {
+        setIsCollapsed(true);
+        setShowContent(false);
+      } else {
+        setIsCollapsed(false);
+        setTimeout(() => {
+          setShowContent(true);
+        }, 200);
+      }
+    };
+
+    // 초기 로드 시에도 체크
+    handleResize();
+
+    // 리사이즈 이벤트 리스너 추가
+    window.addEventListener('resize', handleResize);
+
+    // 클린업
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   const handleToggle = () => {
     if (!isCollapsed) {
       // 접힐 때: 즉시 콘텐츠 숨기기
@@ -32,13 +59,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
       }, 200);
     }
   };
-
-  useEffect(() => {
-    // 초기 상태에서는 콘텐츠가 보이도록 설정
-    if (!isCollapsed) {
-      setShowContent(true);
-    }
-  }, []);
 
   return (
     <div className={`${isCollapsed ? 'w-16' : 'w-64'} bg-white shadow-lg border-r border-gray-200 transition-all duration-300 ease-in-out`}>
