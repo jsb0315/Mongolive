@@ -20,6 +20,8 @@ const Field: React.FC<FieldProps> = ({
   parentPath = []
 }) => {
   const isSelected = selectedFieldName === field.name;
+  
+  const refTraverse = field.type === 'Referenced' && field.isReferencedDocument;
 
   const renderFieldValue = () => {
     const { 
@@ -34,7 +36,7 @@ const Field: React.FC<FieldProps> = ({
       hasSubDocuments 
     } = field;
 
-    if (isReferencedDocument) {
+    if (refTraverse) {
       console.log(`Rendering field: ${field.name}, `, 'hasReference:', hasReference, 'isReferencedDocument:', isReferencedDocument, 'Original Document:', originalDocument, 'refDoc:', referencedDocuments, 'refCollection:', referencedCollection, 'refDatabase:', referencedDatabase);
     }
 
@@ -47,7 +49,7 @@ const Field: React.FC<FieldProps> = ({
                 case 'ObjectId': return 'bg-blue-100 text-blue-700';
                 case 'Document': return 'bg-pink-100 text-pink-700';
                 case 'Embedded': return 'bg-purple-100 text-purple-700';
-                case 'ReferencedDocument': return 'bg-cyan-100 text-cyan-700';
+                case 'Referenced': return 'bg-cyan-100 text-cyan-700';
                 case 'Array': return 'bg-green-100 text-green-700';
                 case 'String': return 'bg-gray-100 text-gray-700';
                 case 'Int32':
@@ -91,7 +93,7 @@ const Field: React.FC<FieldProps> = ({
           )}
 
           {/* ReferencedDocument 표시 */}
-          {isReferencedDocument && (
+          { refTraverse && (
             <span className="px-2 py-1 text-xs rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200">
               {referencedDatabase}/{referencedCollection}
             </span>
@@ -125,7 +127,7 @@ const Field: React.FC<FieldProps> = ({
         )}
 
         {/* ReferencedDocument 정보 */}
-        {isReferencedDocument && originalDocument && (
+        {refTraverse && originalDocument && (
           <div className="text-xs mt-2">
             <div className="bg-cyan-50 p-2 rounded border">
               <div className="flex items-center justify-between mb-1">
@@ -156,14 +158,21 @@ const Field: React.FC<FieldProps> = ({
         isSelected
           ? 'bg-purple-50 border border-purple-200 shadow-sm'
           : 'hover:bg-gray-50 border border-transparent'
-      } ${field.hasReference ? 'ring-1 ring-blue-200' : ''} ${field.isReferencedDocument ? 'ring-1 ring-cyan-200' : ''}`}
+      } ${field.hasReference ? 'ring-1 ring-blue-200' : ''} ${refTraverse ? 'ring-1 ring-cyan-200' : ''}`}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* 키 이름 */}
           <div className="flex items-center gap-2 ml-1 mb-1 min-w-0 truncate text-ellipsis">
             <span className="font-medium text-gray-900 text-sm">
-              {field.name}:
+              {(() => {
+              const fieldNameArray = field.name.split(' ');
+              if (fieldNameArray[fieldNameArray.length - 1] === '_') {
+                return fieldNameArray[1];
+              } else {
+                return field.name;
+              }
+              })()}:
             </span>
             <span className="text-sm text-gray-600 font-mono truncate">
               {formatValue(field.value)}
@@ -176,7 +185,7 @@ const Field: React.FC<FieldProps> = ({
               </svg>
             )}
 
-            {field.isReferencedDocument && (
+            {refTraverse && (
               <svg className="w-4 h-4 text-cyan-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -188,7 +197,7 @@ const Field: React.FC<FieldProps> = ({
               </svg>
             )}
 
-            {canTraverse(field.value, field.hasReference, field.isReferencedDocument, field.isArray) && (
+            {canTraverse(field.value, field.hasReference, field.isReferencedDocument, field.type) && (
               <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
@@ -215,12 +224,12 @@ const Field: React.FC<FieldProps> = ({
                 Query Reference
               </button>
             )}
-            {field.isReferencedDocument && (
+            {refTraverse && (
               <button className="px-3 py-1 bg-cyan-500 text-white text-xs rounded hover:bg-cyan-600 transition-colors duration-200">
                 Explore Document
               </button>
             )}
-            {canTraverse(field.value, field.hasReference, field.isReferencedDocument, field.isArray) && (
+            {canTraverse(field.value, field.hasReference, field.isReferencedDocument, field.type) && (
               <button className="px-3 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors duration-200">
                 Explore Structure
               </button>

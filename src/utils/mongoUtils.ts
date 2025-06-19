@@ -14,19 +14,46 @@ export const isObjectIdArray = (value: any): boolean => {
     value.every(item => isObjectId(item));
 };
 
-// Document 확인 (객체 O, ObjectId X, value._id X)
-export const isDocument = (value: any): 'Document' | 'Embedded' | false => {
+// Document 확인 (객체 O, ObjectId X, value._id X) - 배열 반환으로 변경
+export const isDocument = (value: any): string[] | false => {
   if (value !== null &&
     typeof value === 'object' &&
     !Array.isArray(value) &&
     !(value instanceof Date) &&
     !(value instanceof ObjectId) &&
     !(value instanceof Decimal128) &&
-    !isObjectId(value))
-    if (value._id)
-      return 'Embedded'; // Document는 _id 필드가 없어야 함
-    else return 'Document'; // 일반 Document
-  else return false;
+    !isObjectId(value)) {
+
+    const types: string[] = [];
+
+    // _id 필드 존재 여부에 따라 타입 결정
+    if (value._id) {
+      types.push('Embedded'); // _id가 있으면 Embedded Document
+    } else {
+      types.push('Document'); // _id가 없으면 일반 Document
+      // 내부 값들을 순회하여 ObjectId가 있는지 확인
+      const hasObjectIdInside = Object.values(value).some((val: any) => {
+        if (isObjectId(val)) return true;
+        if (isObjectIdArray(val)) return true;
+        if (Array.isArray(val)) {
+          return val.some(item => isObjectId(item));
+        }
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+          // 중첩된 객체의 경우 재귀적으로 확인
+          return Object.values(val).some(nestedVal => isObjectId(nestedVal));
+        }
+        return false;
+      });
+  
+      if (hasObjectIdInside) {
+        types.push('ObjectId');
+      }
+    }
+
+    return types;
+  }
+
+  return false;
 };
 
 // SubDocument 확인 (_id 필드를 가진 임베디드 도큐먼트)
@@ -43,12 +70,17 @@ export const hasSubDocuments = (value: any): boolean => {
 };
 
 // 탐색 가능한 구조 확인 (depth 증가 조건) - Reference와 ReferencedDocument 추가
-export const canTraverse = (value: any, hasReference: boolean = false, isReferencedDocument: string | null = null, isArray: boolean = false): boolean => {
+export const canTraverse = (value: any, hasReference: boolean = false, isReferencedDocument: string | null = null, fieldType: string | string[] = ''): boolean => {
+  // type 배열 아니면 칼같이 false
+  if (!Array.isArray(fieldType) && fieldType !== 'ObjectId') return false
+  // ObjectId 타입 포함 확인
+  if (typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId')) 
   // Reference 필드도 탐색 가능
   if (hasReference) return true;
   // ReferencedDocument도 탐색 가능
   if (isReferencedDocument) return true;
-  if (isArray) return true;
+    return true;
+
   // SubDocument (_id를 가진 배열 아이템들)만 depth 증가
   return hasSubDocuments(value) ||
     (isDocument(value) && Object.keys(value).length > 0);
@@ -67,20 +99,24 @@ export const getMongoType = (value: any): string | string[] => {
     return 'String';
   }
   if (value instanceof Date) return 'Date';
-  if (value instanceof ObjectId) { 
-    console.log('---------------- ', value); 
+  if (value instanceof ObjectId) {
     return 'ObjectId';
   }
   if (value instanceof Decimal128) return 'Decimal128';
   if (Array.isArray(value)) {
     // ObjectId 배열 확인 (isObjectId && isArray)
     if (isObjectIdArray(value)) return ['Array', 'ObjectId'];
-    const docTypes = Array.from(new Set(value.map(item => isDocument(item)).filter(type => type !== false)));
+    const docTypes = Array.from(new Set(
+      value
+        .map(item => isDocument(item))
+        .filter((type): type is string[] => type !== false) // 🔥 타입 내로잉
+        .flat() // string[][] → string[]
+    ));
     if (docTypes.length > 0) return ['Array', ...docTypes];
     else return 'Array';
   }
-  const isdoc = isDocument(value);
-  if (isdoc) return isdoc;
+  const docResult = isDocument(value);
+  if (docResult) return docResult;
   return 'Mixed';
 };
 
@@ -96,7 +132,11 @@ export const formatValue = (value: any): string => {
   if (isObjectIdArray(value)) return `[${value.length} ObjectIds]`;
   if (hasSubDocuments(value)) return `[${value.length} SubDocuments]`;
   if (Array.isArray(value)) return `Array(${value.length})`;
-  if (isDocument(value)) return `{${Object.keys(value).length} fields}`;
+  const docResult = isDocument(value);
+  if (docResult) {
+    const hasObjectId = docResult.includes('ObjectId') ? ' with ObjectIds' : '';
+    return `{${Object.keys(value).length} fields${hasObjectId}}`;
+  }
   if (typeof value === 'string') {
     const truncated = value.length > 50 ? value.substring(0, 50) + '...' : value;
     return `"${truncated}"`;

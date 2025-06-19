@@ -6,15 +6,15 @@ export interface FieldPath {
   path: string[];
   type: string | string[];
   isObjectId: boolean;
-  isDocument_type: false | 'Document' | 'Embedded';
+  isDocument_type: false | string[];
   isArray: boolean;
   hasSubDocuments: boolean;
   // Reference 관련 추가 필드
-  hasReference?: boolean;
-  referencedDocuments?: Array<MongoDocument> | null;
-  referencedCollection?: string | null;
-  referencedDatabase?: string | null;
+  hasReference: boolean;
+  referencedDatabase: string | null;
+  referencedCollection: string | null;
+  referencedDocuments: Array<MongoDocument> | null;
   // ReferencedDocument 관련 추가 필드 (상위 문서의 ObjectID 저장)
-  isReferencedDocument?: string | null;
+  isReferencedDocument: string | null;
   originalDocument?: MongoDocument;
 }
