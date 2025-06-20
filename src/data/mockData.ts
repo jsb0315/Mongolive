@@ -267,10 +267,10 @@ export const mockDocuments: { [key: string]: MongoDocument[] } = {
       },
       // References to other documents
       orderHistory: [
+        new ObjectId('507f1f77bcf86cd799439011'),
         new ObjectId('507f191e810c19729de860ea'),
-        new ObjectId('507f1f77bcf86cd799439041')
       ],
-      wishlistId: new ObjectId('507f191e810c19729de860ea'),
+      wishlistId: new ObjectId('507f1f77bcf86cd799439042'),
       cartId: new ObjectId('507f191e810c19729de860f2'),
       // Account status
       status: 'active',
@@ -1073,7 +1073,7 @@ export const getSubCollection = (path: string): MongoDocument[] => {
   return mockSubCollections[path] || [];
 };
 
-export const findDocumentByReference = (database: string, collectionName: string, id: string | ObjectId): MongoDocument | null => {
+export const findDocumentByReference = (database: string, id: string | ObjectId): { document: MongoDocument, database: string, collection: string } | null => {
   const searchId = typeof id === 'string' ? id : id.toString();
   // testDB 전체에서 검색
   const dbPrefix = `${database}/`;
@@ -1081,7 +1081,14 @@ export const findDocumentByReference = (database: string, collectionName: string
     if (key.startsWith(dbPrefix)) {
       const documents = mockDocuments[key] || [];
       const found = documents.find(doc => doc._id.toString() === searchId);
-      if (found) return found;
+      if (found) {
+        const [db, collection] = key.split('/');
+        return {
+          document: found,
+          database: db,
+          collection: collection
+        };
+      }
     }
   }
   return null;

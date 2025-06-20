@@ -32,22 +32,25 @@ export const isDocument = (value: any): string[] | false => {
     } else {
       types.push('Document'); // _id가 없으면 일반 Document
       // 내부 값들을 순회하여 ObjectId가 있는지 확인
-      const hasObjectIdInside = Object.values(value).some((val: any) => {
-        if (isObjectId(val)) return true;
-        if (isObjectIdArray(val)) return true;
-        if (Array.isArray(val)) {
-          return val.some(item => isObjectId(item));
-        }
-        if (val && typeof val === 'object' && !Array.isArray(val)) {
-          // 중첩된 객체의 경우 재귀적으로 확인
-          return Object.values(val).some(nestedVal => isObjectId(nestedVal));
-        }
-        return false;
-      });
-  
-      if (hasObjectIdInside) {
+    }
+    const hasObjectIdInside = Object.entries(value).some(([key, val]: [string, any]) => {
+      if (key !== '_id' && isObjectId(val)) {
         types.push('ObjectId');
+        return true;
       }
+      if (isObjectIdArray(val)) return true;
+      if (Array.isArray(val)) {
+        return val.some(item => isObjectId(item));
+      }
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        // 중첩된 객체의 경우 재귀적으로 확인
+        return Object.values(val).some(nestedVal => isObjectId(nestedVal));
+      }
+      return;
+    });
+
+    if (hasObjectIdInside && !types.includes('ObjectId')) {
+      types.push('ObjectId');
     }
 
     return types;
@@ -74,12 +77,12 @@ export const canTraverse = (value: any, hasReference: boolean = false, isReferen
   // type 배열 아니면 칼같이 false
   if (!Array.isArray(fieldType) && fieldType !== 'ObjectId') return false
   // ObjectId 타입 포함 확인
-  if (typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId')) 
-  // Reference 필드도 탐색 가능
-  if (hasReference) return true;
+  if (typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'))
+    // Reference 필드도 탐색 가능
+    if (hasReference) return true;
   // ReferencedDocument도 탐색 가능
   if (isReferencedDocument) return true;
-    return true;
+  return true;
 
   // SubDocument (_id를 가진 배열 아이템들)만 depth 증가
   return hasSubDocuments(value) ||
@@ -112,7 +115,7 @@ export const getMongoType = (value: any): string | string[] => {
         .filter((type): type is string[] => type !== false) // 🔥 타입 내로잉
         .flat() // string[][] → string[]
     ));
-    if (docTypes.length > 0) return ['Array', ...docTypes];
+    if (docTypes.length > 0) return ['Array', ...(docTypes.includes('Embedded') ? ['Embedded'] : docTypes)];
     else return 'Array';
   }
   const docResult = isDocument(value);
@@ -160,47 +163,25 @@ export const getValueByPath = (obj: any, path: string[]): any => {
 };
 
 // Reference 해결 (향상된 버전)
-export const resolveReference = (objectId: ObjectId | string, selectedDatabase: any, currentCollection?: string | null): {
+export const resolveReference = (objectId: ObjectId | string, selectedDatabase: any): {
   document: MongoDocument | null;
   collection: string | null;
   database: string | null;
 } => {
-  if (!selectedDatabase || !currentCollection) {
+  if (!selectedDatabase) {
     return { document: null, collection: null, database: null };
   }
 
-  const collectionKey = `${selectedDatabase.name}/${currentCollection}`;
-  const referenceMap = crossDatabaseReferenceMap[collectionKey as keyof typeof crossDatabaseReferenceMap];
-
-  if (referenceMap) {
-    // 가능한 참조 컬렉션들을 확인
-    const possibleCollections = Object.values(referenceMap);
-    for (const targetCollection of possibleCollections) {
-      const [dbName, collName] = targetCollection.split('/');
-      const doc = findDocumentByReference(dbName, collName, objectId);
-      if (doc) {
-        return {
-          document: doc,
-          collection: collName,
-          database: dbName
-        };
-      }
-    }
+  // 선택된 데이터베이스의 모든 컬렉션에서 참조 검색
+  const doc = findDocumentByReference(selectedDatabase.name, objectId);
+  if (doc?.document) {
+    console.log(`Resolved reference for ObjectId ${objectId} in collection ${doc.collection} of database ${selectedDatabase.name}`);
+    return {
+      document: doc.document,
+      collection: doc.collection,
+      database: doc.database
+    };
   }
 
   return { document: null, collection: null, database: null };
-};
-
-// 참조 해결을 위한 ObjectId 배열 처리
-export const resolveObjectIdArray = (objectIds: (ObjectId | string)[], selectedDatabase: any, currentCollection?: string | null): MongoDocument[] => {
-  const resolvedDocs: MongoDocument[] = [];
-
-  for (const objectId of objectIds) {
-    const resolved = resolveReference(objectId, selectedDatabase, currentCollection);
-    if (resolved.document) {
-      resolvedDocs.push(resolved.document);
-    }
-  }
-
-  return resolvedDocs;
 };
