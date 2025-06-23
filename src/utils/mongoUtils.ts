@@ -149,6 +149,7 @@ export const formatValue = (value: any): string => {
 
 // 경로로 값 가져오기
 export const getValueByPath = (obj: any, path: string[]): any => {
+  console.log(`Getting value by path: ${path.join('.')}`);
   return path.reduce((current, key) => {
     if (current && typeof current === 'object') {
       // 배열 인덱스 처리

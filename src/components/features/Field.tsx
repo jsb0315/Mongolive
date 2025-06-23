@@ -20,25 +20,25 @@ const Field: React.FC<FieldProps> = ({
   parentPath = []
 }) => {
   const isSelected = selectedFieldName === field.name;
-  
-  const refTraverse = field.type === 'Referenced' && field.isReferencedDocument;
+
+  const refTraverse = field.type === 'Referenced' && field.isReferencedDocument;  // ReferencedDocument 탐색 여부
 
   const renderFieldValue = () => {
-    const { 
-      value, 
-      type, 
-      hasReference, 
-      isReferencedDocument, 
-      referencedDocuments, 
-      originalDocument, 
-      referencedCollection, 
+    const {
+      value,
+      type,
+      hasReference,
+      isReferencedDocument,
+      referencedDocuments,
+      originalDocument,
+      referencedCollection,
       referencedDatabase,
-      hasSubDocuments 
+      hasSubDocuments
     } = field;
 
-    if (refTraverse) {
-      console.log(`Rendering field: ${field.name}, `, 'hasReference:', hasReference, 'isReferencedDocument:', isReferencedDocument, 'Original Document:', originalDocument, 'refDoc:', referencedDocuments, 'refCollection:', referencedCollection, 'refDatabase:', referencedDatabase);
-    }
+    // if (refTraverse) {
+    //   console.log(`Rendering field: ${field.name}, `, 'hasReference:', hasReference, 'isReferencedDocument:', isReferencedDocument, 'Original Document:', originalDocument, 'refDoc:', referencedDocuments, 'refCollection:', referencedCollection, 'refDatabase:', referencedDatabase);
+    // }
 
     return (
       <div className="space-y-1">
@@ -93,7 +93,7 @@ const Field: React.FC<FieldProps> = ({
           )}
 
           {/* ReferencedDocument 표시 */}
-          { refTraverse && (
+          {refTraverse && (
             <span className="px-2 py-1 text-xs rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200">
               {referencedDatabase}/{referencedCollection}
             </span>
@@ -148,60 +148,66 @@ const Field: React.FC<FieldProps> = ({
     );
   };
 
+  const fieldNameArray = field.name.split(' ');
+  const isArrayRefDoc = fieldNameArray[fieldNameArray.length - 1] === '_';  // 단독 RefDoc의 경우 마지막 부분이 '_'로 끝남
+  const displayName = refTraverse ? fieldNameArray[0] : field.name; // 필드 이름 표시
+  const displayValue = refTraverse ? fieldNameArray[1] : formatValue(field.value);  // 필드 값 표시
   return (
     <div
       onClick={() => {
         console.log('Field clicked:', field);
         onFieldSelect(field.name, parentPath, depth);
       }}
-      className={`p-2 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden mb-1 ${
-        isSelected
+      className={`p-2 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden mb-1 ${isSelected
           ? 'bg-purple-50 border border-purple-200 shadow-sm'
           : 'hover:bg-gray-50 border border-transparent'
-      } ${field.hasReference ? 'ring-1 ring-blue-200' : ''} ${refTraverse ? 'ring-1 ring-cyan-200' : ''}`}
+        } ${field.hasReference ? 'ring-1 ring-blue-200' : ''} ${refTraverse ? 'ring-1 ring-cyan-200' : ''}`}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* 키 이름 */}
-          <div className="flex items-center gap-2 ml-1 mb-1 min-w-0 truncate text-ellipsis">
-            <span className="font-medium text-gray-900 text-sm">
-              {(() => {
-              const fieldNameArray = field.name.split(' ');
-              if (fieldNameArray[fieldNameArray.length - 1] === '_') {
-                return fieldNameArray[1];
-              } else {
-                return field.name;
-              }
-              })()}:
-            </span>
-            <span className="text-sm text-gray-600 font-mono truncate">
-              {formatValue(field.value)}
-            </span>
+          <div className="flex items-center gap-2 ml-1 mb-1 min-w-0 truncate justify-between">
 
-            {/* MongoDB 특화 아이콘들 */}
-            {field.hasReference && (
-              <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-            )}
+            <div className="flex items-center justify-center gap-1 min-w-0 truncate text-ellipsis">
+              {!isArrayRefDoc && (
+                <span className="font-medium text-gray-900 text-sm">
+                  {displayName}:
+                </span>
+              )}
+              <span className={refTraverse
+                ? "font-medium text-gray-900 text-sm"
+                : "text-sm text-gray-600 font-mono truncate"
+              }>
+                {displayValue}
+              </span>
+            </div>
 
-            {refTraverse && (
-              <svg className="w-4 h-4 text-cyan-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            )}
+            <div className="flex items-center">
+              {/* MongoDB 특화 아이콘들 */}
+              {field.hasReference && (
+                <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              )}
 
-            {field.hasSubDocuments && (
-              <svg className="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            )}
+              {refTraverse && (
+                <svg className="w-4 h-4 text-cyan-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              )}
 
-            {canTraverse(field.value, field.hasReference, field.isReferencedDocument, field.type) && (
-              <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            )}
+              {field.hasSubDocuments && (
+                <svg className="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              )}
+
+              {canTraverse(field.value, field.hasReference, field.isReferencedDocument, field.type) && (
+                <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              )}
+            </div>
           </div>
 
           {/* 필드 값 */}

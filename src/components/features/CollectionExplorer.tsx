@@ -36,7 +36,6 @@ const CollectionExplorer: React.FC = () => {
   // 선택된 데이터베이스가 변경될 때마다 컬렉션 목록 업데이트
   useEffect(() => {
     if (selectedDatabase) {
-      console.log(`Loading collections for database: ${selectedDatabase.name}`);
       setCollections(selectedDatabase.collections);
       // 데이터베이스가 변경되면 선택 상태 초기화
       setSelectedCollection(null);
@@ -137,12 +136,12 @@ const CollectionExplorer: React.FC = () => {
     if (parentField?.isReferencedDocument) {
       referencedCollection = parentField.referencedCollection;
       referencedDatabase = parentField.referencedDatabase;
+      isReferencedDocument = parentField.isReferencedDocument || fieldValue?._id?.toString();
 
       // ReferencedDocument의 하위 필드인 경우
       if (parentField.originalDocument) {
-        if (hasSubDocuments(fieldValue) || isDocument(fieldValue)) {
+        if (hasSubDocuments(fieldValue) || isDocument(fieldValue) || Array.isArray(fieldValue)) {
           originalDocument = fieldValue;
-          isReferencedDocument = fieldValue?._id?.toString() || parentField.isReferencedDocument;
         }
       }
     }
@@ -173,7 +172,6 @@ const CollectionExplorer: React.FC = () => {
           const resolved = resolveReference(fieldValue, selectedDatabase);
           referencedDocuments = resolved.document ? [resolved.document] : null;
           referencedCollection = resolved.collection ? [resolved.collection] : null;
-          console.log(referencedCollection)
           referencedDatabase = selectedDatabase?.name || null;  // DB도 통째로 찾으려면 나중에 수정
         } 
         // ObjectId 배열인 경우
@@ -185,7 +183,6 @@ const CollectionExplorer: React.FC = () => {
             referencedDocuments = resolvedDocs;
             referencedDatabase = selectedDatabase?.name || null;
             referencedCollection = resolvedCollections;
-            console.log(resolvedRefs)
           } else {
             referencedDocuments = [];
           }
@@ -208,7 +205,6 @@ const CollectionExplorer: React.FC = () => {
         isReferencedDocument,
         originalDocument
       };
-      console.log('refInfo: ', referencedDatabase, referencedCollection);
 
       if (depth === currentDepth) {
         setFieldStack(prev => [...prev, newField]);
@@ -289,7 +285,6 @@ const CollectionExplorer: React.FC = () => {
       }
 
       const refDocs = parentField?.referencedDocuments || null;
-      console.log('문제의 그부분----------------------refDocs: ', parentField);
       // 단독 Reference 필드인 경우 (Referenced Documents 목록)
       if (parentField.hasReference && refDocs) {
         return refDocs.map((doc: MongoDocument, index: number) => {
