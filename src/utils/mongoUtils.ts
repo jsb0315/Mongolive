@@ -74,7 +74,7 @@ export const hasSubDocuments = (value: any): boolean => {
 
 // 탐색 가능한 구조 확인 (depth 증가 조건) - Reference와 ReferencedDocument 추가
 export const canTraverse = (value: any, hasReference: boolean = false, isReferencedDocument: string | null = null, fieldType: string | string[] = ''): boolean => {
-  // type 배열 아니면 칼같이 false
+  // type 배열도 ObjectId도 아니면 칼같이 false
   if (!Array.isArray(fieldType) && fieldType !== 'ObjectId') return false
   // ObjectId 타입 포함 확인
   if (typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'))
@@ -85,8 +85,8 @@ export const canTraverse = (value: any, hasReference: boolean = false, isReferen
   return true;
 
   // SubDocument (_id를 가진 배열 아이템들)만 depth 증가
-  return hasSubDocuments(value) ||
-    (isDocument(value) && Object.keys(value).length > 0);
+  // return hasSubDocuments(value) ||
+  //   (isDocument(value) && Object.keys(value).length > 0);
 };
 
 // MongoDB 타입 식별

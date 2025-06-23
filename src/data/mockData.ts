@@ -185,6 +185,7 @@ export const mockDocuments: { [key: string]: MongoDocument[] } = {
       password: '$2b$10$K7L/8Y3i4m9n0O1p2Q3r4S5t6U7v8W9x0Y1z2A3b4C5d6E7f8G9h',
       profile: {
         firstName: 'John',
+        test: [{1:1},2,3],
         lastName: 'Doe',
         dateOfBirth: new Date('1985-06-15'),
         gender: 'male',

@@ -12,6 +12,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
   const menuItems = [
     { id: 'collections', label: 'Collection Explorer I', icon: '📊' },
     { id: 'collections2', label: 'Collection Explorer II', icon: '📊' },
+    { id: 'playGround', label: 'playGround', icon: '👟' },
     { id: 'changestream', label: 'Change Stream', icon: '🔄' },
     { id: 'query', label: 'Query Executor', icon: '⚡' },
     { id: 'clients', label: 'Connected Clients', icon: '👥' },

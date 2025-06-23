@@ -10,6 +10,7 @@ import ClientMonitoring from './components/features/ClientMonitoring';
 import PerformanceMetrics from './components/features/PerformanceMetrics';
 import AuthSystem from './components/features/AuthSystem';
 import { DatabaseProvider } from './contexts/DatabaseContext';
+import PlayGround from './components/features/PlayGround';
 
 import JsonExplorer from './test';
 
@@ -80,7 +81,7 @@ interface SearchParams {
 //   transports: ['websocket']
 // });
 
-type ActiveTab = 'collections' | 'collections2' | 'changestream' | 'query' | 'clients' | 'performance' | 'auth';
+type ActiveTab = 'collections' | 'collections2' | 'changestream' | 'query' | 'clients' | 'performance' | 'auth' | 'playGround';
 
 function App() {
   const [users, setUsers] = useState<User[]>([]);
@@ -173,6 +174,8 @@ function App() {
         return <CollectionExplorer />;
       case 'collections2':
         return <JsonExplorer data={sampleData} />;
+      case 'playGround':
+        return <PlayGround data={sampleData} />;
       case 'changestream':
         return <ChangeStreamLogs />;
       case 'query':
