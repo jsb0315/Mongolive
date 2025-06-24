@@ -90,38 +90,78 @@ export const canTraverse = (value: any, hasReference: boolean = false, isReferen
 };
 
 // MongoDB 타입 식별
-export const getMongoType = (value: any): string | string[] => {
-  if (value === null) return 'null';
-  if (value === undefined) return 'undefined';
-  if (typeof value === 'boolean') return 'Boolean';
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? 'Int32' : 'Double';
+export const getMongoType = (value: any): string[] => {
+  const types = new Set<string>();
+
+  function classifyObject(obj: any): string {
+    const keys = Object.keys(obj);
+
+    const hasId = "_id" in obj;
+    const idIsObjectId = isObjectId(obj["_id"]);
+
+    const hasOtherObjectId = keys.some(
+      (key) => key !== "_id" && isObjectId(obj[key])
+    );
+
+    if (hasId && idIsObjectId) return "Embedded";
+    if (!hasId && hasOtherObjectId) return "Referenced";
+    if (!hasId && !hasOtherObjectId) return "Document";
+    return "ObjectId";
   }
-  if (typeof value === 'string') {
-    if (isObjectId(value)) return 'ObjectId';
-    return 'String';
+
+  function traverse(value: any) {
+    if (isObjectId(value)) {
+      return types.add("ObjectId");
+    }
+    if (Array.isArray(value)) {
+      types.add("Array");
+      value.forEach(traverse);
+    } else if (value !== null && typeof value === "object") {
+      if (value instanceof Date) return types.add('Date');
+      if (value instanceof Decimal128) return types.add('Decimal128');
+      const objType = classifyObject(value);
+      types.add(objType);
+      for (const key in value) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          traverse(value[key]);
+        }
+      }
+    } else if (isObjectId(value)) {
+      types.add("ObjectId");
+    } else {
+      if (types.has('Referenced') || types.has('Document') || types.has('Array') || types.has('Embedded')) return;  // ObjectId가 이미 발견되면 다른 타입은 무시
+      if (typeof value === 'string') types.add('String');
+      if (value === null) types.add('null');
+      if (value === undefined) types.add('undefined');
+      if (typeof value === 'boolean') types.add('Boolean');
+      if (typeof value === 'number') Number.isInteger(value) ? types.add('Int32') : types.add('Double');
+    }
   }
-  if (value instanceof Date) return 'Date';
-  if (value instanceof ObjectId) {
-    return 'ObjectId';
+
+  traverse(value);
+
+  // 우선순위 필터링
+  const finalTypes = new Set<string>(types);
+  if (Array.from(types)[0] !== 'Array') // Array가 첫 번째 타입이 아니면 Array 제거
+    finalTypes.delete("Array");
+  if (types.has("ObjectId") && types.has("Embedded")) {
+    finalTypes.delete("Referenced");
   }
-  if (value instanceof Decimal128) return 'Decimal128';
-  if (Array.isArray(value)) {
-    // ObjectId 배열 확인 (isObjectId && isArray)
-    if (isObjectIdArray(value)) return ['Array', 'ObjectId'];
-    const docTypes = Array.from(new Set(
-      value
-        .map(item => isDocument(item))
-        .filter((type): type is string[] => type !== false) // 🔥 타입 내로잉
-        .flat() // string[][] → string[]
-    ));
-    if (docTypes.length > 0) return ['Array', ...(docTypes.includes('Embedded') ? ['Embedded'] : docTypes)];
-    else return 'Array';
+  // if (types.has("Referenced")) {
+  //   finalTypes.delete("Embedded");
+  //   finalTypes.delete("Document");
+  // } 
+  if (types.size > 1) {
+    finalTypes.delete("Date");
+    finalTypes.delete("Decimal128");
   }
-  const docResult = isDocument(value);
-  if (docResult) return docResult;
-  return 'Mixed';
-};
+  if (types.has("Embedded")) {
+    finalTypes.delete("Document");
+  }
+
+  return Array.from(finalTypes);
+}
+
 
 // 값 형식화 (MongoDB 스타일)
 export const formatValue = (value: any): string => {

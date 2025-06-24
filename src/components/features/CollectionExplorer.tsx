@@ -235,7 +235,7 @@ const CollectionExplorer: React.FC = () => {
     if (depth === 0) {
       // 루트 레벨 필드들
       return Object.keys(selectedDocument)
-        .filter(key => key !== '_id') // _id 제외
+        // .filter(key => key !== '_id') // _id 제외
         .map(key => {
           const fieldType = getMongoType(selectedDocument[key]);
           return {
@@ -263,7 +263,7 @@ const CollectionExplorer: React.FC = () => {
       if (parentField.isReferencedDocument && parentField.originalDocument) {
         const refDoc = parentField.originalDocument;
         return Object.keys(refDoc)
-          .filter(key => key !== '_id')
+          // .filter(key => key !== '_id')
           .map(key => {
             const fieldType = getMongoType(refDoc[key]);
             return {
@@ -361,7 +361,7 @@ const CollectionExplorer: React.FC = () => {
       } else if (isDocument(parentValue)) {
         // 도큐먼트인 경우
         return Object.keys(parentValue)
-          .filter(key => key !== '_id')
+          // .filter(key => key !== '_id')
           .map(key => {
             const fieldType = getMongoType(parentValue[key]);
             return {
@@ -546,7 +546,8 @@ const CollectionExplorer: React.FC = () => {
                         )}
                       </div>
                       <div className="mt-1 text-xs text-gray-500 truncate">
-                        {Object.keys(doc).filter(key => key !== '_id').length} fields
+                        {Object.keys(doc).length} fields
+                        {/* {Object.keys(doc).filter(key => key !== '_id').length} fields */}
                       </div>
                     </div>
                   ))
