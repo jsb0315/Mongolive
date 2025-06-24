@@ -31,14 +31,14 @@ export const isDocument = (value: any): string[] | false => {
       types.push('Embedded'); // _id가 있으면 Embedded Document
     } else {
       types.push('Document'); // _id가 없으면 일반 Document
-      // 내부 값들을 순회하여 ObjectId가 있는지 확인
     }
+    // 내부 값들을 순회하여 ObjectId가 있는지 확인
     const hasObjectIdInside = Object.entries(value).some(([key, val]: [string, any]) => {
       if (key !== '_id' && isObjectId(val)) {
         types.push('ObjectId');
-        return true;
+        return types;
       }
-      if (isObjectIdArray(val)) return true;
+      if (isObjectIdArray(val)) return types;
       if (Array.isArray(val)) {
         return val.some(item => isObjectId(item));
       }

@@ -107,6 +107,7 @@ const CollectionExplorer: React.FC = () => {
     const isRefDocField = (/^\[\d+\]/.test(fieldName) && parentField?.hasReference) ||
       (fieldValue && typeof fieldValue === 'object' && '_id' in fieldValue && parentField?.hasReference);
 
+    console.log('문제의 그부분 ----------------> ', isRefDocField, parentField?.hasReference)
     // 현재 depth와 선택된 필드가 일치하지 않으면 선택 해제
     if (!canTraverse(fieldValue, isRefField, isRefDocField ? 'temp' : null, fieldType) && fieldName === selectedFields[depth]) {
       setSelectedFields(prev => {
@@ -560,7 +561,7 @@ const CollectionExplorer: React.FC = () => {
             const isLastSection = index === totalSections - 1;
             const parentField = index > 0 ? fieldStack[index - 1] : null;
             const hasReferenceSection = parentField?.hasReference || false;
-            const isReferencedDocumentSection = parentField?.isReferencedDocument;
+            const isReferencedDocumentSection = parentField?.isReferencedDocument;  // Ref ObjectID O
 
             return (
               <div

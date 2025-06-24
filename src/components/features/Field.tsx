@@ -159,7 +159,7 @@ const Field: React.FC<FieldProps> = ({
         onFieldSelect(field.name, parentPath, depth);
       }}
       className={`p-2 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden mb-1 ${isSelected
-          ? 'bg-purple-50 border border-purple-200 shadow-sm'
+          ? 'bg-slate-100 border border-slate-200 shadow-sm'
           : 'hover:bg-gray-50 border border-transparent'
         } ${field.hasReference ? 'ring-1 ring-blue-200' : ''} ${refTraverse ? 'ring-1 ring-cyan-200' : ''}`}
     >
