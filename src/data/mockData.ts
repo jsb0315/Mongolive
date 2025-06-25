@@ -14,7 +14,7 @@ export interface Database {
   totalSize: string;
   totalCollections: number;
 }
-
+// 주석
 export interface MongoDocument {
   _id: ObjectId | string;
   [key: string]: any;
