@@ -189,7 +189,7 @@ const CollectionExplorer: React.FC = () => {
         name: fieldName,
         value: fieldValue,
         path: fullPath,
-        type: isRefDocField ? ['Referenced'] : getMongoType(fieldValue),
+        type: getMongoType(fieldValue),
         referencedDocuments,
         referencedCollection,
         referencedDatabase,
