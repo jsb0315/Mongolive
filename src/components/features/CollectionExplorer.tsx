@@ -9,9 +9,6 @@ import { FieldPath } from '../../types/collectionTypes';
 import FieldSection from './FieldSection';
 import {
   isObjectId,
-  isObjectIdArray,
-  isDocument,
-  hasSubDocuments,
   canTraverse,
   getMongoType,
   getValueByPath,
@@ -27,11 +24,6 @@ const CollectionExplorer: React.FC = () => {
   const [selectedFields, setSelectedFields] = useState<(string | null)[]>([]);
   const [fieldStack, setFieldStack] = useState<FieldPath[]>([]);
   const [currentDepth, setCurrentDepth] = useState<number>(0);
-
-  // ReferencedDocument 상태인지 확인 (fieldStack에서 ReferencedDocument가 있는지 확인)
-  const isInReferencedDocumentMode = (): boolean => {
-    return fieldStack.some(field => field.isReferencedDocument || field.hasReference);
-  };
 
   // 선택된 데이터베이스가 변경될 때마다 컬렉션 목록 업데이트
   useEffect(() => {
@@ -75,39 +67,41 @@ const CollectionExplorer: React.FC = () => {
   const handleFieldSelect = (fieldName: string, parentPath: string[] = [], depth: number) => {
     const fullPath = [...parentPath, fieldName];
 
-    // Referenced Document에서 필드를 선택하는 경우를 위한 특별 처리
-    let fieldValue;
-    const parentField = depth > 0 ? fieldStack[depth - 1] : null;
+    const parentField = depth > 0 ? fieldStack[depth - 1] : null; // 현재 선택한 필드임
+    let fieldValue; // 현재 선택한 필드 내부값(진)
 
-    if (parentField?.hasReference && parentField.referencedDocuments) {
+    const parentType = parentField?.type || [];
+    const hasRefField = parentType.includes('Referenced'); // 하위에 Ref 존재
+    const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced"); // Ref Field, 누르면 쿼리하느거
+    
+    if (isRefField) {
       // Reference에서 특정 Referenced Document를 선택하는 경우
       if (/^\[\d+\]/.test(fieldName)) {
         const index = parseInt(fieldName.match(/^\[(\d+)\]/)?.[1] || '0');
-        fieldValue = parentField.referencedDocuments[index];
+        fieldValue = parentField?.referencedDocuments![index];
       } else {
         // Reference의 단일 문서에서 필드를 선택하는 경우
-        const refDoc = parentField.referencedDocuments[0];
+        const refDoc = parentField?.referencedDocuments![0];
         fieldValue = refDoc ? refDoc[fieldName] : undefined;
       }
-    } else if (parentField?.isReferencedDocument && parentField.originalDocument) {
+    } else if (parentField?.referencedId && parentField.originalDocument) {
       // Referenced Document에서 필드를 선택하는 경우
       fieldValue = parentField.originalDocument[fieldName];
     } else {
       // 일반적인 경우
       fieldValue = selectedDocument ? getValueByPath(selectedDocument, fullPath) : undefined;
+      console.log(`Getting field value at path: ${fullPath.join('.')}`, fieldValue);
     }
 
     if (!selectedDocument) return;
 
-    const fieldType = getMongoType(fieldValue);
     // Reference 확인 (isObjectId && isArray 조건 통합)
-    const isRefField = typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId');
+    const fieldType = getMongoType(fieldValue);
 
     // ReferencedDocument 확인 (Referenced Document 배열에서 개별 문서를 선택한 경우)
-    const isRefDocField = (/^\[\d+\]/.test(fieldName) && parentField?.hasReference) ||
-      (fieldValue && typeof fieldValue === 'object' && '_id' in fieldValue && parentField?.hasReference);
+    const isRefDocField = (/^\[\d+\]/.test(fieldName) && parentField?.type.includes('Referenced')) ||
+      (fieldValue && typeof fieldValue === 'object' && '_id' in fieldValue && parentField?.type.includes('Referenced'));
 
-    console.log('문제의 그부분 ----------------> ', isRefDocField, parentField?.hasReference)
     // 현재 depth와 선택된 필드가 일치하지 않으면 선택 해제
     if (!canTraverse(fieldValue, isRefField, isRefDocField ? 'temp' : null, fieldType) && fieldName === selectedFields[depth]) {
       setSelectedFields(prev => {
@@ -118,7 +112,7 @@ const CollectionExplorer: React.FC = () => {
       return;
     }
 
-    console.log(`Selecting field: ${fullPath.join('.')}, fieldValue:`, fieldValue, 'hasReference:', isRefField, 'isReferencedDocument:', isRefDocField, 'canTraverse', canTraverse(fieldValue, isRefField, isRefDocField ? 'temp' : null, fieldType));
+    console.log(`Selecting field: ${fullPath.join('.')}, fieldValue:`, fieldValue, 'hasReference:', isRefField, 'referencedId:', isRefDocField, 'canTraverse', canTraverse(fieldValue, isRefField, isRefDocField ? 'temp' : null, fieldType));
 
     // depth에 해당하는 selectedField 설정
     setSelectedFields(prev => {
@@ -130,23 +124,24 @@ const CollectionExplorer: React.FC = () => {
     let referencedDocuments = null;
     let referencedCollection: string[] | null = null;
     let referencedDatabase = null;
-    let isReferencedDocument: string | null = null;
+    let referencedId: string | null = null;
     let originalDocument = null;
 
     // parentField가 ReferencedDocument인 경우 정보 업데이트
-    if (parentField?.isReferencedDocument) {
+    if (parentField?.referencedId) {
       referencedCollection = parentField.referencedCollection;
       referencedDatabase = parentField.referencedDatabase;
-      isReferencedDocument = parentField.isReferencedDocument || fieldValue?._id?.toString();
+      referencedId = parentField.referencedId || fieldValue?._id?.toString();
 
       // ReferencedDocument의 하위 필드인 경우
       if (parentField.originalDocument) {
-        if (hasSubDocuments(fieldValue) || isDocument(fieldValue) || Array.isArray(fieldValue)) {
+        if (fieldType.includes('Document') || fieldType.includes('Embedded') || fieldType.includes('Array')) {
           originalDocument = fieldValue;
         }
       }
     }
 
+    console.log('문제의 그부분 ------------>', fieldValue, isRefField, fieldType, canTraverse(fieldValue, isRefField, isRefDocField ? 'temp' : null, fieldType))
     // Reference, ReferencedDocument, SubDocument, Array만 depth 증가
     if (canTraverse(fieldValue, isRefField, isRefDocField ? 'temp' : null, fieldType)) {
 
@@ -156,12 +151,12 @@ const CollectionExplorer: React.FC = () => {
           const index = parseInt(fieldName.match(/^\[(\d+)\]/)?.[1] || '0');
           originalDocument = parentField.referencedDocuments[index];
           // 상위 문서의 ObjectId 저장
-          isReferencedDocument = originalDocument?._id?.toString() || null;
+          referencedId = originalDocument?._id?.toString() || null;
           referencedCollection = [parentField.referencedCollection![index]];
         } else {
           // 단일 Referenced Document에서 다른 객체 필드를 선택한 경우
           originalDocument = fieldValue;
-          isReferencedDocument = fieldValue?._id?.toString() || null;
+          referencedId = fieldValue?._id?.toString() || null;
           referencedCollection = parentField.referencedCollection;
         }
         referencedDatabase = parentField.referencedDatabase;
@@ -169,14 +164,14 @@ const CollectionExplorer: React.FC = () => {
       // Reference 해결
       else if (isRefField) {
         // ObjectId인 경우
-        if (isObjectId(fieldValue) && !Array.isArray(fieldValue)) {
+        if (fieldType.length === 1 && fieldType[0] === 'ObjectId') {
           const resolved = resolveReference(fieldValue, selectedDatabase);
           referencedDocuments = resolved.document ? [resolved.document] : null;
           referencedCollection = resolved.collection ? [resolved.collection] : null;
           referencedDatabase = selectedDatabase?.name || null;  // DB도 통째로 찾으려면 나중에 수정
         } 
         // ObjectId 배열인 경우
-        else if ((isObjectId(fieldValue) && Array.isArray(fieldValue)) || isObjectIdArray(fieldValue)) {
+        else if (fieldType.length === 2 && fieldType.includes('ObjectId') && fieldType.includes('Array')) {
           const resolvedRefs = fieldValue.map((id: any) => resolveReference(id, selectedDatabase));
           const resolvedDocs = resolvedRefs.map((ref: any) => ref.document);
           const resolvedCollections = resolvedRefs.map((ref: any) => ref.collection);
@@ -194,20 +189,16 @@ const CollectionExplorer: React.FC = () => {
         name: fieldName,
         value: fieldValue,
         path: fullPath,
-        type: isRefDocField ? 'Referenced' : getMongoType(fieldValue),
-        isObjectId: isObjectId(fieldValue),
-        isDocument_type: isDocument(fieldValue),
-        isArray: Array.isArray(fieldValue),
-        hasSubDocuments: hasSubDocuments(fieldValue),
-        hasReference: isRefField,
+        type: isRefDocField ? ['Referenced'] : getMongoType(fieldValue),
         referencedDocuments,
         referencedCollection,
         referencedDatabase,
-        isReferencedDocument,
+        referencedId,
         originalDocument
       };
 
-      if (depth === currentDepth) {
+      if (depth === currentDepth)  {
+        console.log(`Adding new field to stack at depth ${depth} \n`, newField)
         setFieldStack(prev => [...prev, newField]);
         setCurrentDepth(prev => prev + 1);
       } else {
@@ -215,6 +206,7 @@ const CollectionExplorer: React.FC = () => {
         handleBackNavigation(currentDepth + (depth - currentDepth + 1));
         setFieldStack(prev => [...prev.slice(0, -1), newField]);
       }
+      console.log(`Field stack updated:`, fieldValue, fieldStack);
     }
   };
 
@@ -235,35 +227,32 @@ const CollectionExplorer: React.FC = () => {
     if (depth === 0) {
       // 루트 레벨 필드들
       return Object.keys(selectedDocument)
-        // .filter(key => key !== '_id') // _id 제외
+        .filter(key => key !== '_id') // _id 제외
         .map(key => {
           const fieldType = getMongoType(selectedDocument[key]);
-          return {
+            return {
             name: key,
             value: selectedDocument[key],
             path: [key],
             type: fieldType,
-            isObjectId: isObjectId(selectedDocument[key]),
-            isDocument_type: isDocument(selectedDocument[key]),
-            isArray: Array.isArray(selectedDocument[key]),
-            hasSubDocuments: hasSubDocuments(selectedDocument[key]),
-            hasReference: typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'),
             referencedDatabase: null,
             referencedCollection: null,
             referencedDocuments: null,
-            isReferencedDocument: null
-          }
+            referencedId: null
+            } as FieldPath;
         });
     } else {
       // 중첩된 레벨의 필드들
-      const parentField = fieldStack[depth - 1];
+      const parentField = fieldStack[depth - 1];  //  현재 선택한 필드
       if (!parentField) return [];
 
+      const isRefField = parentField.type.length === 2 && parentField.type.includes('Referenced') && parentField.type.includes('ObjectId'); // 현재 필드가 Reference 필드인지 여부
+      
       // ReferencedDocument 필드인 경우 (개별 Referenced Document의 필드들)
-      if (parentField.isReferencedDocument && parentField.originalDocument) {
+      if (parentField.referencedId && parentField.originalDocument) {
         const refDoc = parentField.originalDocument;
         return Object.keys(refDoc)
-          // .filter(key => key !== '_id')
+          .filter(key => key !== '_id')
           .map(key => {
             const fieldType = getMongoType(refDoc[key]);
             return {
@@ -271,49 +260,42 @@ const CollectionExplorer: React.FC = () => {
               value: refDoc[key],
               path: [...parentField.path, key],
               type: fieldType,
-              isObjectId: isObjectId(refDoc[key]),
-              isDocument_type: isDocument(refDoc[key]),
-              isArray: Array.isArray(refDoc[key]),
-              hasSubDocuments: hasSubDocuments(refDoc[key]),
-              hasReference: typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'),
               referencedDatabase: parentField.referencedDatabase,
               referencedCollection: parentField.referencedCollection,
               referencedDocuments: null,
               // ReferencedDocument 모드에서는 모든 하위 요소들도 ReferencedDocument로 마킹
-              isReferencedDocument: refDoc[key]?._id?.toString() || parentField.isReferencedDocument
-            }
+              referencedId: refDoc[key]?._id?.toString() || parentField.referencedId
+            } as FieldPath;
           });
       }
 
-      const refDocs = parentField?.referencedDocuments || null;
+      const refDocs = isRefField ? parentField.referencedDocuments : null;
       // 단독 Reference 필드인 경우 (Referenced Documents 목록)
-      if (parentField.hasReference && refDocs) {
+      if (isRefField && refDocs) {
         return refDocs.map((doc: MongoDocument, index: number) => {
           return {
-            name: `[${index}] ${doc._id.toString()}${!parentField.isArray ? ' _' : ''}`,
+            name: `[${index}] ${doc._id.toString()}${!parentField.type.includes('Array') ? ' _' : ''}`,
             value: doc,
             path: [...parentField.path, `[${index}]`],
-            type: 'Referenced',
-            isObjectId: false,
-            isDocument_type: ['Embedded'],
-            isArray: false,
-            hasSubDocuments: false,
-            hasReference: false,
+            type: ['Referenced'],
             referencedDocuments: null,
             referencedDatabase: parentField.referencedDatabase,
             referencedCollection: [parentField.referencedCollection![index]],
-            isReferencedDocument: doc._id.toString(),
+            referencedId: doc._id.toString(),
             originalDocument: doc
           }
         });
       }
 
       const parentValue = parentField.value;
-      if (parentField.isArray) {
+      const isDoc = parentField.type.includes('Document');
+
+      // 부모 필드가 Array인 경우
+      if (parentField && parentField.type.includes('Array') && !isDoc) {
+        console.log('AAaaaaaaaaaaray No Doc Fields:', parentValue, parentField);
         // Array 필드인 경우 배열 요소들을 표시
-        const arrayValue = parentField.value;
-        if (Array.isArray(arrayValue)) {
-          return arrayValue.map((item: any, index: number) => {
+        if (Array.isArray(parentValue)) {
+          return parentValue.map((item: any, index: number) => {
             {
               const fieldType = getMongoType(item);
               return {
@@ -321,24 +303,19 @@ const CollectionExplorer: React.FC = () => {
                 value: item,
                 path: [...parentField.path, `[${index}]`],
                 type: fieldType,
-                isObjectId: isObjectId(item),
-                isDocument_type: isDocument(item),
-                isArray: Array.isArray(item),
-                hasSubDocuments: hasSubDocuments(item),
-                hasReference: typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'),
                 referencedDatabase: refDocs ? parentField.referencedDatabase : null,
                 referencedCollection: refDocs ? [parentField.referencedCollection![index]] : null,
                 referencedDocuments: null,
-                // ReferencedDocument 모드인 경우 하위 요소들도 ReferencedDocument로 마킹
-                isReferencedDocument: item?._id?.toString() || parentField.isReferencedDocument
-              }
+                // referencedId
+              } as FieldPath;
             }
           });
         }
         return [];
       }
 
-      if (hasSubDocuments(parentValue)) {
+      // 부모 필드가 Document인 경우
+      if (parentField.type.includes('Array') && (isDoc || parentField.type.includes('ObjectId'))) {
         // SubDocument 배열인 경우
         return parentValue.map((item: any, index: number) => {
           const fieldType = getMongoType(item);
@@ -347,21 +324,17 @@ const CollectionExplorer: React.FC = () => {
             value: item,
             path: [...parentField.path, `[${index}]`],
             type: fieldType,
-            isObjectId: isObjectId(item),
-            isDocument_type: isDocument(item),
-            isArray: Array.isArray(item),
-            hasSubDocuments: hasSubDocuments(item),
-            hasReference: typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'),
             referencedDatabase: refDocs ? parentField.referencedDatabase : null,
             referencedCollection: refDocs ? [parentField.referencedCollection![index]] : null,
-            // ReferencedDocument 모드인 경우 하위 요소들도 ReferencedDocument로 마킹
-            isReferencedDocument: item?._id?.toString() || parentField.isReferencedDocument
-          }
+            // referencedDocuments
+            referencedId: item?._id?.toString() || parentField.referencedId
+          } as FieldPath;
         });
-      } else if (isDocument(parentValue)) {
+      } else if (isDoc) {
         // 도큐먼트인 경우
+        console.log('Doooooooooocument Fields:', parentValue);
         return Object.keys(parentValue)
-          // .filter(key => key !== '_id')
+          .filter(key => key !== '_id')
           .map(key => {
             const fieldType = getMongoType(parentValue[key]);
             return {
@@ -369,17 +342,11 @@ const CollectionExplorer: React.FC = () => {
               value: parentValue[key],
               path: [...parentField.path, key],
               type: fieldType,
-              isObjectId: isObjectId(parentValue[key]),
-              isDocument_type: isDocument(parentValue[key]),
-              isArray: Array.isArray(parentValue[key]),
-              hasSubDocuments: hasSubDocuments(parentValue[key]),
-              hasReference: typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'),
               referencedDatabase: refDocs ? parentField.referencedDatabase : null,
               referencedCollection: refDocs ? parentField.referencedCollection : null,
               referencedDocuments: null,
-              // ReferencedDocument 모드인 경우 하위 요소들도 ReferencedDocument로 마킹
-              isReferencedDocument: parentValue[key]?._id?.toString() || parentField.isReferencedDocument
-            }
+              referencedId: parentValue[key]?._id?.toString() || parentField.referencedId
+            } as FieldPath;
           });
       }
 
@@ -400,9 +367,9 @@ const CollectionExplorer: React.FC = () => {
       items.push(`${selectedDocument._id.toString().substring(0, 8)}...`);
     }
     fieldStack.forEach(field => {
-      if (field.hasReference && field.referencedDatabase && field.referencedCollection) {
+      if (field.type.includes('Referenced') && field.referencedDatabase && field.referencedCollection) {
         items.push(`${field.name} → ${field.referencedDatabase}/${field.referencedCollection}`);
-      } else if (field.isReferencedDocument && field.referencedDatabase && field.referencedCollection) {
+      } else if (field.referencedId && field.referencedDatabase && field.referencedCollection) {
         items.push(`${field.name} (${field.referencedDatabase}/${field.referencedCollection})`);
       } else {
         items.push(`${field.name}`);
@@ -546,8 +513,7 @@ const CollectionExplorer: React.FC = () => {
                         )}
                       </div>
                       <div className="mt-1 text-xs text-gray-500 truncate">
-                        {Object.keys(doc).length} fields
-                        {/* {Object.keys(doc).filter(key => key !== '_id').length} fields */}
+                        {Object.keys(doc).filter(key => key !== '_id').length} fields
                       </div>
                     </div>
                   ))
@@ -561,8 +527,9 @@ const CollectionExplorer: React.FC = () => {
             const totalSections = Math.max(1, currentDepth + 1);
             const isLastSection = index === totalSections - 1;
             const parentField = index > 0 ? fieldStack[index - 1] : null;
-            const hasReferenceSection = parentField?.hasReference || false;
-            const isReferencedDocumentSection = parentField?.isReferencedDocument;  // Ref ObjectID O
+            const hasReferenceSection = parentField?.type.includes('ObjectId') || false;
+            const isReferenceSection = parentField?.type.includes('Referenced') || false;
+            const referencedIdSection = parentField?.referencedId;  // Ref ObjectID O
 
             return (
               <div
@@ -576,7 +543,7 @@ const CollectionExplorer: React.FC = () => {
                       ? selectedDocument
                         ? 'Document Fields'
                         : 'Field Details'
-                      : parentField?.type === 'Referenced'
+                      : isReferenceSection
                         ? 'Referenced Documents'
                         : `${fieldStack[index - 1]?.name || 'Field'} Properties`
                   }
@@ -590,7 +557,7 @@ const CollectionExplorer: React.FC = () => {
                   currentDepth={currentDepth}
                   isActive={index <= currentDepth}
                   hasReferenceSection={hasReferenceSection}
-                  isReferencedDocumentSection={isReferencedDocumentSection}
+                  referencedIdSection={referencedIdSection}
                   referencedDatabase={parentField?.referencedDatabase || null}
                   referencedCollection={parentField?.referencedCollection || null}
                   parentFieldPath={parentField?.path || []}

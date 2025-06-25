@@ -7,70 +7,6 @@ export const isObjectId = (value: any): boolean => {
   return typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value);
 };
 
-// ObjectId 배열 확인 (isObjectId && isArray로 대체)
-export const isObjectIdArray = (value: any): boolean => {
-  return Array.isArray(value) &&
-    value.length > 0 &&
-    value.every(item => isObjectId(item));
-};
-
-// Document 확인 (객체 O, ObjectId X, value._id X) - 배열 반환으로 변경
-export const isDocument = (value: any): string[] | false => {
-  if (value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    !(value instanceof Date) &&
-    !(value instanceof ObjectId) &&
-    !(value instanceof Decimal128) &&
-    !isObjectId(value)) {
-
-    const types: string[] = [];
-
-    // _id 필드 존재 여부에 따라 타입 결정
-    if (value._id) {
-      types.push('Embedded'); // _id가 있으면 Embedded Document
-    } else {
-      types.push('Document'); // _id가 없으면 일반 Document
-    }
-    // 내부 값들을 순회하여 ObjectId가 있는지 확인
-    const hasObjectIdInside = Object.entries(value).some(([key, val]: [string, any]) => {
-      if (key !== '_id' && isObjectId(val)) {
-        types.push('ObjectId');
-        return types;
-      }
-      if (isObjectIdArray(val)) return types;
-      if (Array.isArray(val)) {
-        return val.some(item => isObjectId(item));
-      }
-      if (val && typeof val === 'object' && !Array.isArray(val)) {
-        // 중첩된 객체의 경우 재귀적으로 확인
-        return Object.values(val).some(nestedVal => isObjectId(nestedVal));
-      }
-      return;
-    });
-
-    if (hasObjectIdInside && !types.includes('ObjectId')) {
-      types.push('ObjectId');
-    }
-
-    return types;
-  }
-
-  return false;
-};
-
-// SubDocument 확인 (_id 필드를 가진 임베디드 도큐먼트)
-export const hasSubDocuments = (value: any): boolean => {
-  if (Array.isArray(value) && value.length > 0) {
-    return value.every(item =>
-      typeof item === 'object' &&
-      item !== null &&
-      '_id' in item &&
-      isObjectId(item._id)
-    );
-  }
-  return false;
-};
 
 // 탐색 가능한 구조 확인 (depth 증가 조건) - Reference와 ReferencedDocument 추가
 export const canTraverse = (value: any, hasReference: boolean = false, isReferencedDocument: string | null = null, fieldType: string | string[] = ''): boolean => {
@@ -93,7 +29,7 @@ export const canTraverse = (value: any, hasReference: boolean = false, isReferen
 export const getMongoType = (value: any): string[] => {
   const types = new Set<string>();
 
-  function classifyObject(obj: any): string {
+  function classifyObject(obj: any): Set<string> {
     const keys = Object.keys(obj);
 
     const hasId = "_id" in obj;
@@ -103,31 +39,31 @@ export const getMongoType = (value: any): string[] => {
       (key) => key !== "_id" && isObjectId(obj[key])
     );
 
-    if (hasId && idIsObjectId) return "Embedded";
-    if (!hasId && hasOtherObjectId) return "Referenced";
-    if (!hasId && !hasOtherObjectId) return "Document";
-    return "ObjectId";
+    if (hasId && idIsObjectId) return new Set(["Embedded", "Document"]); // _id O, ObjectId O
+    if (!hasId && hasOtherObjectId) return new Set(["Referenced", "Document"]);  // _id X, ObjectId O
+    if (!hasId && !hasOtherObjectId) return new Set(["Document"]); // _id X, ObjectId X
+    return new Set(["ObjectId"]);
   }
 
-  function traverse(value: any) {
-    if (isObjectId(value)) {
-      return types.add("ObjectId");
+  function traverse(value: any, key: string = '') {
+    if (isObjectId(value) && key !== "_id") {
+      types.add("Referenced");
+      types.add("ObjectId");
+      return
     }
     if (Array.isArray(value)) {
       types.add("Array");
-      value.forEach(traverse);
+      value.forEach((item, index) => traverse(item, `${key}[${index}]`));
     } else if (value !== null && typeof value === "object") {
       if (value instanceof Date) return types.add('Date');
       if (value instanceof Decimal128) return types.add('Decimal128');
       const objType = classifyObject(value);
-      types.add(objType);
+      objType.forEach(type => types.add(type));
       for (const key in value) {
         if (Object.prototype.hasOwnProperty.call(value, key)) {
-          traverse(value[key]);
+          traverse(value[key], key);
         }
       }
-    } else if (isObjectId(value)) {
-      types.add("ObjectId");
     } else {
       if (types.has('Referenced') || types.has('Document') || types.has('Array') || types.has('Embedded')) return;  // ObjectId가 이미 발견되면 다른 타입은 무시
       if (typeof value === 'string') types.add('String');
@@ -140,13 +76,13 @@ export const getMongoType = (value: any): string[] => {
 
   traverse(value);
 
-  // 우선순위 필터링
+  // 우선순위 필터링 출력 레벨에서 사용해야됨
   const finalTypes = new Set<string>(types);
   if (Array.from(types)[0] !== 'Array') // Array가 첫 번째 타입이 아니면 Array 제거
     finalTypes.delete("Array");
-  if (types.has("ObjectId") && types.has("Embedded")) {
-    finalTypes.delete("Referenced");
-  }
+  // if (types.has("ObjectId") && types.has("Embedded")) {
+  //   finalTypes.delete("Referenced");
+  // }
   // if (types.has("Referenced")) {
   //   finalTypes.delete("Embedded");
   //   finalTypes.delete("Document");
@@ -155,35 +91,64 @@ export const getMongoType = (value: any): string[] => {
     finalTypes.delete("Date");
     finalTypes.delete("Decimal128");
   }
-  if (types.has("Embedded")) {
-    finalTypes.delete("Document");
-  }
+  // if (types.has("Embedded")) {
+  //   finalTypes.delete("Document");
+  // }
 
   return Array.from(finalTypes);
 }
 
 
 // 값 형식화 (MongoDB 스타일)
-export const formatValue = (value: any): string => {
+export const formatValue = (value: any, type: string[]): string => {
   if (value === null) return 'null';
   if (value === undefined) return 'undefined';
-  if (value instanceof ObjectId) return `ObjectId("${value.toString()}")`;
-  if (value instanceof Decimal128) return `NumberDecimal("${value.toString()}")`;
-  if (value instanceof Date) return `ISODate("${value.toISOString()}")`;
-  if (isObjectId(value)) return `ObjectId("${value}")`;
-  // ObjectId 배열 확인 (isObjectId && isArray)
-  if (isObjectIdArray(value)) return `[${value.length} ObjectIds]`;
-  if (hasSubDocuments(value)) return `[${value.length} SubDocuments]`;
-  if (Array.isArray(value)) return `Array(${value.length})`;
-  const docResult = isDocument(value);
-  if (docResult) {
-    const hasObjectId = docResult.includes('ObjectId') ? ' with ObjectIds' : '';
-    return `{${Object.keys(value).length} fields${hasObjectId}}`;
+  
+  // type 배열에 따른 우선순위 매핑
+  if (type.includes('ObjectId')) {
+    if (value instanceof ObjectId) return `ObjectId("${value.toString()}")`;
+    if (isObjectId(value)) return `ObjectId("${value}")`;
+    if (type.includes('Array')) return `[${value.length} ObjectIds]`;
   }
-  if (typeof value === 'string') {
+  
+  if (type.includes('Decimal128')) {
+    return `NumberDecimal("${value.toString()}")`;
+  }
+  
+  if (type.includes('Date')) {
+    return `ISODate("${value.toISOString()}")`;
+  }
+  
+  if (type.includes('Embedded')) {
+    if (Array.isArray(value)) return `[${value.length} SubDocuments]`;
+    return `{${Object.keys(value).length} fields}`;
+  }
+  
+  if (type.includes('Referenced')) {
+    return `{${Object.keys(value).length} fields with ObjectIds}`;
+  }
+  
+  if (type.includes('Document')) {
+    return `{${Object.keys(value).length} fields}`;
+  }
+  
+  if (type.includes('Array')) {
+    return `Array(${value.length})`;
+  }
+  
+  if (type.includes('String')) {
     const truncated = value.length > 50 ? value.substring(0, 50) + '...' : value;
     return `"${truncated}"`;
   }
+  
+  if (type.includes('Boolean')) {
+    return String(value);
+  }
+  
+  if (type.includes('Int32') || type.includes('Double')) {
+    return String(value);
+  }
+  
   return String(value);
 };
 
