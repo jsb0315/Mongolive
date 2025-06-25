@@ -7,7 +7,7 @@ interface FieldProps {
   selectedFieldName: string | null;
   depth: number;
   currentDepth: number;
-  onFieldSelect: (fieldName: string, parentPath: string[], depth: number) => void;
+  onFieldSelect: (selectedField: FieldPath, parentPath: string[], depth: number) => void;
   parentPath?: string[];
 }
 
@@ -106,7 +106,7 @@ const Field: React.FC<FieldProps> = ({
         </div>
 
         {/* Reference 정보 */}
-        {type.includes('Referenced') && referencedDocuments && (
+        {type.includes('Referenced') && referencedDocuments && typeof referencedDocuments[0] === 'object' && (
           <div className="text-xs mt-2">
             <div className="bg-blue-50 p-2 rounded border">
               <div className="flex items-center justify-between mb-1">
@@ -118,7 +118,7 @@ const Field: React.FC<FieldProps> = ({
                 )}
               </div>
               <div className="text-blue-600">
-                {referencedDocuments.length} document{referencedDocuments.length !== 1 ? 's' : ''} found
+                {Object.keys(referencedDocuments[0]).length} document{Object.keys(referencedDocuments[0]).length !== 1 ? 's' : ''} found
               </div>
             </div>
           </div>
@@ -152,10 +152,7 @@ const Field: React.FC<FieldProps> = ({
   const displayValue = refTraverse ? fieldNameArray[1] : formatValue(field.value, field.type);  // 필드 값 표시
   return (
     <div
-      onClick={() => {
-        console.log('Field clicked:', field);
-        onFieldSelect(field.name, parentPath, depth);
-      }}
+      onClick={() => onFieldSelect(field, parentPath, depth)}
       className={`p-2 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden mb-1 ${isSelected
           ? 'bg-slate-100 border border-slate-200 shadow-sm'
           : 'hover:bg-gray-50 border border-transparent'

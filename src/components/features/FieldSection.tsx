@@ -16,7 +16,7 @@ interface FieldSectionProps {
   referencedCollection?: string[] | null;
   parentFieldPath?: string[];
   colSpan?: number;
-  onFieldSelect: (fieldName: string, parentPath: string[], depth: number) => void;
+  onFieldSelect: (selectedField: FieldPath, parentPath: string[], depth: number) => void;
   onBackNavigation: (targetDepth: number) => void;
 }
 

@@ -9,21 +9,43 @@ export const isObjectId = (value: any): boolean => {
 
 
 // 탐색 가능한 구조 확인 (depth 증가 조건) - Reference와 ReferencedDocument 추가
-export const canTraverse = (value: any, hasReference: boolean = false, isReferencedDocument: string | null = null, fieldType: string | string[] = ''): boolean => {
-  // type 배열도 ObjectId도 아니면 칼같이 false
-  if (!Array.isArray(fieldType) && fieldType !== 'ObjectId') return false
+export const canTraverse = (value: any, hasReference: boolean = false, isReferencedDocument: string | null = null, fieldType: string[]): boolean => {
   // ObjectId 타입 포함 확인
-  if (typeof fieldType === 'string' ? fieldType === 'ObjectId' : fieldType.includes('ObjectId'))
-    // Reference 필드도 탐색 가능
-    if (hasReference) return true;
-  // ReferencedDocument도 탐색 가능
-  if (isReferencedDocument) return true;
-  return true;
+  if (fieldType.includes('ObjectId') || fieldType.includes('Array') || fieldType.includes('Document'))
+    return true;
+  else return false;
 
   // SubDocument (_id를 가진 배열 아이템들)만 depth 증가
   // return hasSubDocuments(value) ||
   //   (isDocument(value) && Object.keys(value).length > 0);
 };
+
+export function getObjectIdValues(obj: any): any[] {
+  const objectIds: any[] = [];
+  
+  function traverse(value: any) {
+    if (value === null || value === undefined) {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(item => {
+        if (isObjectId(item)) return objectIds.push(item);
+        else traverse(item);
+      });
+    } else if (typeof value === 'object') {
+      Object.keys(value).forEach(key => {
+        if (key !== "_id" && isObjectId(value[key])) {
+          objectIds.push(value[key]);
+        } else {
+          traverse(value[key]);
+        }
+      });
+    }
+  }
+  
+  traverse(obj);
+  return objectIds;
+}
 
 // MongoDB 타입 식별
 export const getMongoType = (value: any): string[] => {
@@ -86,6 +108,9 @@ export const getMongoType = (value: any): string[] => {
   // if (types.has("Referenced")) {
   //   finalTypes.delete("Embedded");
   //   finalTypes.delete("Document");
+  // } 
+  // if (types.size === 2 && types.has("Referenced") && types.has("ObjectId")) {
+  //   finalTypes.delete("ObjectId");
   // } 
   if (types.size > 1) {
     finalTypes.delete("Date");
@@ -169,14 +194,13 @@ export const getValueByPath = (obj: any, path: string[]): any => {
 };
 
 // Reference 해결 (향상된 버전)
-export const resolveReference = (objectId: ObjectId | string, selectedDatabase: any): {
+export const resolveReference = (objectId: any | string, selectedDatabase: any): {
   document: MongoDocument | null;
   collection: string | null;
   database: string | null;
 } => {
-  if (!selectedDatabase) {
-    return { document: null, collection: null, database: null };
-  }
+  if (!isObjectId(objectId)) return { document: null, collection: null, database: null };
+  if (!selectedDatabase) return { document: null, collection: null, database: null };
 
   // 선택된 데이터베이스의 모든 컬렉션에서 참조 검색
   const doc = findDocumentByReference(selectedDatabase.name, objectId);

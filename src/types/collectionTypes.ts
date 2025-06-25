@@ -4,6 +4,9 @@ export interface FieldPath {
   name: string; // 클릭한 필드 이름
   value: any; // 필드의 값 (ObjectId, Document 등)
   path: string[]; // 필드의 경로 (예: ['field1', 'field2'])
+  /**
+   * @type { [ 'ObjectId' | 'Document' | 'Array' | 'String' | 'Boolean' | 'Int32' | 'Double' | 'Embedded' ]}
+   */
   type: string[]; // 필드의 타입 (예: 'ObjectId', 'Document', 'Array', 'String' 등)
   // isObjectId: boolean;  // ObjectId 여부 --> 왜있어야됨??
   // isDocument_type: false | string[];  // Document 여부 (true면 Document, false면 일반 값, 배열이면 Document 타입 배열) --> 왜있어야됨??
