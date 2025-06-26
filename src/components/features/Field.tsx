@@ -38,6 +38,7 @@ const Field: React.FC<FieldProps> = ({
     //   console.log(`Rendering field: ${field.name}, `, 'hasReference:', hasReference, 'referencedId:', referencedId, 'Original Document:', originalDocument, 'refDoc:', referencedDocuments, 'refCollection:', referencedCollection, 'refDatabase:', referencedDatabase);
     // }
 
+    const refDocLength = referencedDocuments ? Object.keys(referencedDocuments[0]).length : null;
     return (
       <div className="space-y-1">
         <div className="flex items-center space-x-2">
@@ -118,7 +119,7 @@ const Field: React.FC<FieldProps> = ({
                 )}
               </div>
               <div className="text-blue-600">
-                {Object.keys(referencedDocuments[0]).length} document{Object.keys(referencedDocuments[0]).length !== 1 ? 's' : ''} found
+                {refDocLength ? `${refDocLength} document${refDocLength !== 1 ? 's' : ''} found` : 'document not found'}
               </div>
             </div>
           </div>

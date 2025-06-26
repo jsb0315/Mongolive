@@ -15,6 +15,7 @@ import {
   resolveReference,
   getObjectIdValues,
 } from '../../utils/mongoUtils';
+import { ObjectId } from 'mongodb';
 
 const CollectionExplorer: React.FC = () => {
   const { selectedDatabase } = useDatabaseContext();
@@ -241,16 +242,28 @@ const CollectionExplorer: React.FC = () => {
       return Object.keys(selectedDocument)
         .filter(key => key !== '_id') // _id 제외
         .map(key => {
-          const fieldType = getMongoType(selectedDocument[key]);
+          const value = selectedDocument[key];
+          const fieldType = getMongoType(value);
+          let database = null;
+          let document: any[] | null = null;
+          let collection: any[] | null = null;
+          
+          if (isObjectId(value)) {
+            const resolvedRef = resolveReference(value, selectedDatabase);
+            database = resolvedRef.database || null;
+            document = resolvedRef?.document ? [resolvedRef?.document] : [{}];
+            collection = resolvedRef.collection ? [resolvedRef.collection] : [{}];
+          }
+          
           return {
             name: key,
-            value: selectedDocument[key],
+            value: value,
             path: [key],
             type: fieldType,
-            referencedDatabase: null,
-            referencedCollection: null,
-            referencedDocuments: null,
-            referencedId: null
+            referencedDatabase: database,
+            referencedCollection: collection,
+            referencedDocuments: document,
+            referencedId: null,
           } as FieldPath;
         });
     } else {
