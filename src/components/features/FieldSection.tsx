@@ -97,10 +97,11 @@ const FieldSection: React.FC<FieldSectionProps> = ({
             </div>
           </div>
         ) : (
-          fields.map((field) => (
+          fields.map((field, index) => (
             <Field
               key={field.name}
               field={field}
+              index={index} // 흠 이거 삭제예정
               selectedFieldName={selectedFieldAtDepth}
               depth={depth}
               currentDepth={currentDepth}

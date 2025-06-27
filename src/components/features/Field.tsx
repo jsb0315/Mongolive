@@ -5,6 +5,7 @@ import { formatValue, canTraverse } from '../../utils/mongoUtils';
 interface FieldProps {
   field: FieldPath;
   selectedFieldName: string | null;
+  index: number;  // 선택된 필드의 인덱스 (선택적)
   depth: number;
   currentDepth: number;
   onFieldSelect: (selectedField: FieldPath, parentPath: string[], depth: number) => void;
@@ -14,6 +15,7 @@ interface FieldProps {
 const Field: React.FC<FieldProps> = ({
   field,
   selectedFieldName,
+  index,
   depth,
   currentDepth,
   onFieldSelect,
@@ -38,7 +40,9 @@ const Field: React.FC<FieldProps> = ({
     //   console.log(`Rendering field: ${field.name}, `, 'hasReference:', hasReference, 'referencedId:', referencedId, 'Original Document:', originalDocument, 'refDoc:', referencedDocuments, 'refCollection:', referencedCollection, 'refDatabase:', referencedDatabase);
     // }
 
-    const refDocLength = referencedDocuments ? Object.keys(referencedDocuments[0]).length : null;
+    const isRefDocField = type.length === 2 && type.includes("ObjectId") && type.includes("Referenced");
+    const refDocLength = isRefDocField && referencedDocuments ? Object.keys(referencedDocuments[0]).length : null;
+    const inRefField = !isRefDocField && referencedDocuments;
     return (
       <div className="space-y-1">
         <div className="flex items-center space-x-2">
@@ -106,7 +110,7 @@ const Field: React.FC<FieldProps> = ({
           )}
         </div>
 
-        {/* Reference 정보 */}
+        {/* Reference 정보 프리뷰 */}
         {type.includes('Referenced') && referencedDocuments && typeof referencedDocuments[0] === 'object' && (
           <div className="text-xs mt-2">
             <div className="bg-blue-50 p-2 rounded border">
