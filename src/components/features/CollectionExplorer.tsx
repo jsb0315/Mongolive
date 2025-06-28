@@ -74,17 +74,17 @@ const CollectionExplorer: React.FC = () => {
     const parentType = parentField?.type || [];
     const hasRefField = fieldType.includes('Referenced'); // 하위에 Ref 존재
     /**
-     * 누르면 resolve 시작
+     * Ref Field 직전 필드, 누르면 resolve 시작
      */
     const isPrevRefField = fieldType.length === 3 && fieldType.includes("ObjectId") && fieldType.includes("Referenced") ||
       fieldType.length === 4 && fieldType.includes("ObjectId") && fieldType.includes("Referenced") && fieldType.includes("Array"); // Ref Field, 누르면 쿼리하느거
     /**
-     * Ref 미리보기 나오는 상태 
+     * Ref Field임 
      */
     const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
     const hasRefData = selectedField.referencedDocuments && selectedField.referencedDocuments.length > 0;
 
-    console.log('\n====================================\nField clicked:', selectedField);
+    console.log('\n====================================\nField clicked:', selectedField, '\ntargetValue: ');
     console.log('Field status\nparentType: ', parentType, '\nhasRefField:', hasRefField, '\nisPrevRefField:', isPrevRefField);
 
     // if (hasRefField) {
