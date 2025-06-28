@@ -31,7 +31,6 @@ const Field: React.FC<FieldProps> = ({
       type,
       referencedId,
       referencedDocuments,
-      originalDocument,
       referencedCollection,
       referencedDatabase,
     } = field;
@@ -40,9 +39,8 @@ const Field: React.FC<FieldProps> = ({
     //   console.log(`Rendering field: ${field.name}, `, 'hasReference:', hasReference, 'referencedId:', referencedId, 'Original Document:', originalDocument, 'refDoc:', referencedDocuments, 'refCollection:', referencedCollection, 'refDatabase:', referencedDatabase);
     // }
 
-    const isRefDocField = type.length === 2 && type.includes("ObjectId") && type.includes("Referenced");
-    const refDocLength = isRefDocField && referencedDocuments ? Object.keys(referencedDocuments[0]).length : null;
-    const inRefField = !isRefDocField && referencedDocuments;
+    const isRefDoc = type.length === 2 && type.includes("ObjectId") && type.includes("Referenced");
+    const refDocLength = isRefDoc && referencedDocuments ? Object.keys(referencedDocuments[0]).length : null;
     return (
       <div className="space-y-1">
         <div className="flex items-center space-x-2">
@@ -129,24 +127,7 @@ const Field: React.FC<FieldProps> = ({
           </div>
         )}
 
-        {/* ReferencedDocument 정보 */}
-        {refTraverse && originalDocument && (
-          <div className="text-xs mt-2">
-            <div className="bg-cyan-50 p-2 rounded border">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium text-cyan-700">Document Fields</span>
-                {referencedDatabase && referencedCollection && (
-                  <span className="text-cyan-600 text-xs bg-white px-2 py-1 rounded">
-                    {referencedDatabase}/{referencedCollection}
-                  </span>
-                )}
-              </div>
-              <div className="text-cyan-600">
-                {Object.keys(originalDocument).filter(k => k !== '_id').length} field{Object.keys(originalDocument).filter(k => k !== '_id').length !== 1 ? 's' : ''} available
-              </div>
-            </div>
-          </div>
-        )}
+        
       </div>
     );
   };

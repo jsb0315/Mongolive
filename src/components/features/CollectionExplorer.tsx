@@ -83,10 +83,11 @@ const CollectionExplorer: React.FC = () => {
         newFields[depth] = null;
         return newFields;
       });
+      console.log('=--=-=-==-=3210410234-리턴임')
       return;
     }
 
-    console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType));
+    console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
 
     // depth에 해당하는 selectedField 설정
     setSelectedFields(prev => {
@@ -176,7 +177,7 @@ const CollectionExplorer: React.FC = () => {
      const isArrayField = parentType.includes('Array'); // Array Field 여부
      const refDocs = parentField.referencedDocuments;
      const targetValue = isRefField ? parentField.referencedDocuments![0] : parentField.value; // Ref Field면 refDocs, 아니면 fieldValue
-      console.log('\n----------------------\ngetFieldsAtDepth called for depth:', depth, '\nparentField:', parentField, '\ntargetValue:', targetValue, '\nisRefField:', isRefField);
+      console.log('\n----------------------\ngetFieldsAtDepth called for depth:', depth, '\nparentField:', parentField, '\ntargetValue:', targetValue, '\nisRefField:', isRefField, '\ncanTraverse:', canTraverse(targetValue, parentType));
 
       if (!canTraverse(targetValue, parentType))  return []; // 현재 필드가 탐색 가능한지 확인
       
@@ -200,7 +201,7 @@ const CollectionExplorer: React.FC = () => {
             referencedDatabase: isRefField ? resolvedRef?.database || null : parentField.referencedDatabase,
             referencedCollection: isRefField ? resolvedRef?.collection || null : parentField.referencedCollection,
             referencedDocuments: isRefField ? (resolvedRef?.document ? [resolvedRef.document] : [{}]) : null,
-            // referencedId
+            referencedId: isRefField ? value : parentField.referencedId, // Ref Field면 ObjectId, 아니면 null
           } as FieldPath;
         }
       });
@@ -380,9 +381,11 @@ const CollectionExplorer: React.FC = () => {
             const totalSections = Math.max(1, currentDepth + 1);
             const isLastSection = index === totalSections - 1;
             const parentField = index > 0 ? fieldStack[index - 1] : null;
-            const hasReferenceSection = parentField?.type.includes('ObjectId') || false;
-            const isReferenceSection = parentField?.type.includes('Referenced') || false;
-            const referencedIdSection = parentField?.referencedId;  // Ref ObjectID O
+
+            const parentType = parentField?.type || [];
+            const hasRefField = parentField?.type.includes('ObjectId') || false;
+            const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced");
+            const referencedId = parentField?.referencedId;  // Ref ObjectID O
 
             return (
               <div
@@ -396,7 +399,7 @@ const CollectionExplorer: React.FC = () => {
                       ? selectedDocument
                         ? 'Document Fields'
                         : 'Field Details'
-                      : isReferenceSection
+                      : isRefField
                         ? 'Referenced Documents'
                         : `${fieldStack[index - 1]?.name || 'Field'} Properties`
                   }
@@ -409,8 +412,9 @@ const CollectionExplorer: React.FC = () => {
                   selectedFieldAtDepth={selectedFields[index] || null}
                   currentDepth={currentDepth}
                   isActive={index <= currentDepth}
-                  hasReferenceSection={hasReferenceSection}
-                  referencedIdSection={referencedIdSection}
+                  hasRefField={hasRefField}
+                  isRefField={isRefField}
+                  referencedId={referencedId}
                   referencedDatabase={parentField?.referencedDatabase || null}
                   referencedCollection={parentField?.referencedCollection || null}
                   parentFieldPath={parentField?.path || []}
