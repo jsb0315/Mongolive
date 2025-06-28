@@ -180,9 +180,9 @@ const CollectionExplorer: React.FC = () => {
 
       if (!canTraverse(targetValue, parentType))  return []; // 현재 필드가 탐색 가능한지 확인
       
-      return (isArrayField ? targetValue : Object.entries(targetValue)).map((item: any, index: number) => {
+      return (isArrayField ? targetValue : Object.entries(targetValue).filter(([key]) => key !== '_id')).map((item: any, index: number) => {
         { // Array면 [a, b, c]=> a/b/c 반환
-          // Array 아니면(=Doc) {a:1, b:2, c:3} => ['a', 1]/['b', 2]/['c', 3] 반환)
+          // Array 아니면(=Doc) {a:1, b:2, c:3} => ['a', 1]/[Object.entries(targetValue).filter([key] !== '_id')'b', 2]/['c', 3] 반환)
           const key = isArrayField ? `[${index}]` : item[0];
           const value = isArrayField ? item : item[1];
           const fieldType = getMongoType(value);
