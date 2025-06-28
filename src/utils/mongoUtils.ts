@@ -9,7 +9,7 @@ export const isObjectId = (value: any): boolean => {
 
 
 // 탐색 가능한 구조 확인 (depth 증가 조건) - Reference와 ReferencedDocument 추가
-export const canTraverse = (value: any, hasReference: boolean = false, isReferencedDocument: string | null = null, fieldType: string[]): boolean => {
+export const canTraverse = (value: any, fieldType: string[]): boolean => {
   // ObjectId 타입 포함 확인
   if (fieldType.includes('ObjectId') || fieldType.includes('Array') || fieldType.includes('Document'))
     return true;
@@ -146,7 +146,7 @@ export const formatValue = (value: any, type: string[]): string => {
   
   if (type.includes('Embedded')) {
     if (Array.isArray(value)) return `[${value.length} SubDocuments]`;
-    return `{${Object.keys(value).length} fields}`;
+    return `{${Object.keys(value).length - 1} fields}`; // _id 제외
   }
   
   if (type.includes('Referenced')) {
@@ -205,7 +205,7 @@ export const resolveReference = (objectId: any | string, selectedDatabase: any):
   // 선택된 데이터베이스의 모든 컬렉션에서 참조 검색
   const doc = findDocumentByReference(selectedDatabase.name, objectId);
   if (doc?.document) {
-    console.log(`Resolved reference for ObjectId ${objectId} in collection ${doc.collection} of database ${selectedDatabase.name}`);
+    console.log(`Resolved reference \nObjectId: ${objectId} \nLoc: ${selectedDatabase.name}/${doc.collection}`);
     return {
       document: doc.document,
       collection: doc.collection,

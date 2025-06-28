@@ -91,24 +91,26 @@ const FieldSection: React.FC<FieldSectionProps> = ({
           <div className="p-4 text-center text-gray-500 text-sm">
             <div className="truncate">
               {depth === 0 ? 'Select a document to view fields' :
-                hasReferenceSection ? 'Reference not resolved' :
-                referencedIdSection ? 'Document has no fields' :
-                'No nested fields'}
+          hasReferenceSection ? 'Reference not resolved' :
+          referencedIdSection ? 'Document has no fields' :
+          'No nested fields'}
             </div>
           </div>
         ) : (
-          fields.map((field, index) => (
-            <Field
-              key={field.name}
-              field={field}
-              index={index} // 흠 이거 삭제예정
-              selectedFieldName={selectedFieldAtDepth}
-              depth={depth}
-              currentDepth={currentDepth}
-              onFieldSelect={onFieldSelect}
-              parentPath={depth === 0 ? [] : parentFieldPath}
-            />
-          ))
+          fields
+            .filter(field => field.name !== '_id')
+            .map((field, index) => (
+              <Field
+          key={field.name}
+          field={field}
+          index={index} // 흠 이거 삭제예정
+          selectedFieldName={selectedFieldAtDepth}
+          depth={depth}
+          currentDepth={currentDepth}
+          onFieldSelect={onFieldSelect}
+          parentPath={depth === 0 ? [] : parentFieldPath}
+              />
+            ))
         )}
       </div>
     </div>

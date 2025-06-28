@@ -202,7 +202,7 @@ const Field: React.FC<FieldProps> = ({
                 </svg>
               )}
 
-              {canTraverse(field.value, field.type.includes('Referenced'), field.referencedId, field.type) && (
+              {canTraverse(field.value, field.type) && (
                 <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /> 
                 </svg>
@@ -235,7 +235,7 @@ const Field: React.FC<FieldProps> = ({
                 Explore Document
               </button>
             )}
-            {canTraverse(field.value, field.type.includes('Referenced'), field.referencedId, field.type) && (
+            {canTraverse(field.value, field.type) && (
               <button className="px-3 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors duration-200">
                 Explore Structure
               </button>
