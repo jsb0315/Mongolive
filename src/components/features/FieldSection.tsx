@@ -65,8 +65,8 @@ const FieldSection: React.FC<FieldSectionProps> = ({
             ) : icon  // RefDoc icon
             }
             <span className="truncate">{title}</span>
-            {(referencedId && referencedDatabase && referencedCollection) && referencedDatabase && referencedCollection && (
-              <span className={'ml-2 px-2 py-1 text-xs rounded bg-cyan-100 text-cyan-700'}>
+            {(referencedDatabase && referencedCollection) && (
+              <span className={'ml-2 px-2 py-1 text-xs rounded text-cyan-700 '+(isRefField ? 'bg-blue-100' : 'bg-cyan-100')}>
                 {referencedDatabase}/{referencedCollection}
               </span>
             )}
@@ -98,11 +98,10 @@ const FieldSection: React.FC<FieldSectionProps> = ({
         ) : (
           fields
             .filter(field => field.name !== '_id')
-            .map((field, index) => (
+            .map((field) => (
               <Field
                 key={field.name}
                 field={field}
-                index={index} // 흠 이거 삭제예정
                 selectedFieldName={selectedFieldAtDepth}
                 depth={depth}
                 currentDepth={currentDepth}

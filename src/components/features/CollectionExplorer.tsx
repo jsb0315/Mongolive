@@ -13,7 +13,6 @@ import {
   getMongoType,
   getValueByPath,
   resolveReference,
-  getObjectIdValues,
 } from '../../utils/mongoUtils';
 
 const CollectionExplorer: React.FC = () => {
@@ -68,35 +67,37 @@ const CollectionExplorer: React.FC = () => {
   const handleFieldSelect = (selectedField: FieldPath, parentPath: string[] = [], depth: number) => {
     const { name: fieldName, value: fieldValue, path: fieldPath, type: fieldType, referencedDocuments: refDocs } = selectedField;
 
+    console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
+
     /**
      * Ref Field임 
      */
     const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
-    // const hasRefData = selectedField.referencedDocuments && selectedField.referencedDocuments.length > 0;
 
     if (!selectedDocument) return;
 
-    // 현재 depth와 선택된 필드가 일치하지 않으면 선택 해제
-    if (!canTraverse(fieldValue, fieldType) && fieldName === selectedFields[depth]) {
-      setSelectedFields(prev => {
-        const newFields = [...prev];
-        newFields[depth] = null;
-        return newFields;
-      });
-      return;
+    // 깊이 추가 안되는 원시 타입일때
+    if (!canTraverse(fieldValue, fieldType)) {
+      if (depth < currentDepth) {
+        handleBackNavigation(depth);
+      } else if (fieldName === selectedFields[depth]) {
+        setSelectedFields(prev => {
+          const newFields = [...prev];
+          newFields[depth] = null;
+          return newFields;
+        });
+        return;
+      }
     }
-
-    console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
 
     setSelectedFields(prev => {
       const newFields = [...prev];
       newFields[depth] = fieldName;
       return newFields.slice(0, depth + 1);
     });
-    
+
     if (canTraverse(fieldValue, fieldType)) {
       // depth에 해당하는 selectedField 설정
-
       const newField: FieldPath = {
         name: fieldName,
         value: fieldValue,
@@ -164,7 +165,7 @@ const CollectionExplorer: React.FC = () => {
             referencedDatabase: database,
             referencedCollection: collection,
             referencedDocuments: document,
-            referencedId: null,
+            referencedId: isObjectId(value) ? value : null,
           } as FieldPath;
         });
     } else {
@@ -214,9 +215,9 @@ const CollectionExplorer: React.FC = () => {
   // 현재 위치 네비게이션 생성 (Reference와 ReferencedDocument 정보 추가)
   const getBreadcrumb = () => {
     const items = [];
-    if (selectedDatabase) {
-      items.push(selectedDatabase.name);
-    }
+    // if (selectedDatabase) {
+    //   items.push(selectedDatabase.name);
+    // }
     if (selectedCollection) {
       items.push(selectedCollection);
     }
@@ -224,11 +225,14 @@ const CollectionExplorer: React.FC = () => {
       items.push(`${selectedDocument._id.toString().substring(0, 8)}...`);
     }
     fieldStack.forEach(field => {
-      if (field.type.includes('Referenced') && field.referencedDatabase && field.referencedCollection) {
-        items.push(`${field.name} → ${field.referencedDatabase}/${field.referencedCollection}`);
+      if (field.type.includes('ObjectId') && field.type.length === 2 && field.referencedDatabase && field.referencedCollection) {
+        // 참조된 필드 이름과 데이터베이스/컬렉션 정보 추가
+        items.push(`${field.name} → (${field.referencedDatabase}/${field.referencedCollection})`);
       } else if (field.referencedId && field.referencedDatabase && field.referencedCollection) {
+        // 참조된 필드 이름과 데이터베이스/컬렉션 정보 추가
         items.push(`${field.name} (${field.referencedDatabase}/${field.referencedCollection})`);
       } else {
+        // 일반 필드 이름만 추가
         items.push(`${field.name}`);
       }
     });
@@ -252,32 +256,55 @@ const CollectionExplorer: React.FC = () => {
   return (
     <div className="CollectionExplorer h-full flex flex-col">
       {/* 상단 네비게이션 */}
-      <div className="Collection_Panel_Navigation bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4 overflow-x-auto overflow-y-hidden">
-        <nav className="flex items-center space-x-2 text-sm">
-          <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-          </svg>
-          {getBreadcrumb().map((item, index) => (
-            <React.Fragment key={index}>
-              {index > 0 && (
-                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-2 pt-3 pb-3 mb-4 overflow-hidden">
+        <div className="relative">
+          <div className="flex items-center space-x-3 text-sm overflow-x-auto scrollbar-hide p-1 pt-0"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none',
+             }}
+            ref={(el) => {
+              if (el) {
+                el.scrollLeft = el.scrollWidth - el.clientWidth;
+              }
+            }}>
+            <div className="flex items-center space-x-3 min-w-fit">
+              <div className="flex items-center space-x-2 bg-white/70 backdrop-blur-sm rounded-lg px-3 py-1.5 border border-slate-200">
+                <svg className="w-4 h-4 text-slate-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                 </svg>
-              )}
-              <button
-                onClick={() => {
-                  if (index >= 3) {
-                    handleBackNavigation(index - 2);
-                  } else handleBackNavigation(0);
-                }}
-                className={`truncate min-w-0 ${index === getBreadcrumb().length - 1 ? 'text-green-600 font-medium' : 'text-gray-600 hover:text-gray-900 cursor-pointer'
-                  } transition-colors duration-200`}
-              >
-                {item}
-              </button>
-            </React.Fragment>
-          ))}
-        </nav>
+                <span className="text-slate-700 font-medium whitespace-nowrap">{selectedDatabase ? selectedDatabase.name : 'Database'}</span>
+              </div>
+
+              {getBreadcrumb().map((item, index) => (
+                <React.Fragment key={index}>
+                  <div className="flex items-center space-x-3">
+                    <svg className="w-3 h-3 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <button
+                      onClick={() => {
+                        if (index > 1) {
+                          handleBackNavigation(index - 1);
+                        } else {
+                          setCurrentDepth(0);
+                          handleBackNavigation(0);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all duration-200 border backdrop-blur-sm ${index === getBreadcrumb().length - 1
+                          ? 'bg-gray-50 border-gray-200 text-gray-600 font-semibold shadow-sm'
+                          : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:text-slate-800 hover:border-slate-300 hover:shadow-sm'
+                        }`}
+                    >
+                      {item}
+                    </button>
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+
+          {/* 스크롤 힌트 그라데이션 */}
+          {/* <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-l from-transparent to-white pointer-events-none z-50"></div> */}
+        </div>
       </div>
 
       {/* 메인 컨텐츠 영역 - 동적 레이아웃 */}

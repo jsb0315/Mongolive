@@ -14,38 +14,7 @@ export const canTraverse = (value: any, fieldType: string[]): boolean => {
   if (fieldType.includes('ObjectId') || fieldType.includes('Array') || fieldType.includes('Document'))
     return true;
   else return false;
-
-  // SubDocument (_id를 가진 배열 아이템들)만 depth 증가
-  // return hasSubDocuments(value) ||
-  //   (isDocument(value) && Object.keys(value).length > 0);
 };
-
-export function getObjectIdValues(obj: any): any[] {
-  const objectIds: any[] = [];
-  
-  function traverse(value: any) {
-    if (value === null || value === undefined) {
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach(item => {
-        if (isObjectId(item)) return objectIds.push(item);
-        else traverse(item);
-      });
-    } else if (typeof value === 'object') {
-      Object.keys(value).forEach(key => {
-        if (key !== "_id" && isObjectId(value[key])) {
-          objectIds.push(value[key]);
-        } else {
-          traverse(value[key]);
-        }
-      });
-    }
-  }
-  
-  traverse(obj);
-  return objectIds;
-}
 
 // MongoDB 타입 식별
 export const getMongoType = (value: any): string[] => {
@@ -128,52 +97,52 @@ export const getMongoType = (value: any): string[] => {
 export const formatValue = (value: any, type: string[]): string => {
   if (value === null) return 'null';
   if (value === undefined) return 'undefined';
-  
+
   // type 배열에 따른 우선순위 매핑
   if (type.includes('ObjectId')) {
     if (value instanceof ObjectId) return `ObjectId("${value.toString()}")`;
     if (isObjectId(value)) return `ObjectId("${value}")`;
     if (type.includes('Array')) return `[${value.length} ObjectIds]`;
   }
-  
+
   if (type.includes('Decimal128')) {
     return `NumberDecimal("${value.toString()}")`;
   }
-  
+
   if (type.includes('Date')) {
     return `ISODate("${value.toISOString()}")`;
   }
-  
+
   if (type.includes('Embedded')) {
     if (Array.isArray(value)) return `[${value.length} SubDocuments]`;
     return `{${Object.keys(value).length - 1} fields}`; // _id 제외
   }
-  
+
   if (type.includes('Referenced')) {
     return `{${Object.keys(value).length} fields with ObjectIds}`;
   }
-  
+
   if (type.includes('Document')) {
     return `{${Object.keys(value).length} fields}`;
   }
-  
+
   if (type.includes('Array')) {
     return `Array(${value.length})`;
   }
-  
+
   if (type.includes('String')) {
     const truncated = value.length > 50 ? value.substring(0, 50) + '...' : value;
     return `"${truncated}"`;
   }
-  
+
   if (type.includes('Boolean')) {
     return String(value);
   }
-  
+
   if (type.includes('Int32') || type.includes('Double')) {
     return String(value);
   }
-  
+
   return String(value);
 };
 
