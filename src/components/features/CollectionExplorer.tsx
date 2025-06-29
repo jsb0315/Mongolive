@@ -67,7 +67,7 @@ const CollectionExplorer: React.FC = () => {
 
   const handleFieldSelect = (selectedField: FieldPath, parentPath: string[] = [], depth: number) => {
     const { name: fieldName, value: fieldValue, path: fieldPath, type: fieldType, referencedDocuments: refDocs } = selectedField;
- 
+
     /**
      * Ref Field임 
      */
@@ -83,41 +83,44 @@ const CollectionExplorer: React.FC = () => {
         newFields[depth] = null;
         return newFields;
       });
-      console.log('=--=-=-==-=3210410234-리턴임')
       return;
     }
 
     console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
 
-    // depth에 해당하는 selectedField 설정
     setSelectedFields(prev => {
       const newFields = [...prev];
       newFields[depth] = fieldName;
       return newFields.slice(0, depth + 1);
     });
+    
+    if (canTraverse(fieldValue, fieldType)) {
+      // depth에 해당하는 selectedField 설정
 
-    const newField: FieldPath = {
-      name: fieldName,
-      value: fieldValue,
-      path: fieldPath,
-      type: getMongoType(fieldValue),
-      referencedDocuments: isRefField ? refDocs : null,
-      referencedCollection: selectedField.referencedCollection,
-      referencedDatabase: selectedField.referencedDatabase,
-      referencedId: selectedField.referencedId,
-      // originalDocument
-    };
+      const newField: FieldPath = {
+        name: fieldName,
+        value: fieldValue,
+        path: fieldPath,
+        type: getMongoType(fieldValue),
+        referencedDocuments: isRefField ? refDocs : null,
+        referencedCollection: selectedField.referencedCollection,
+        referencedDatabase: selectedField.referencedDatabase,
+        referencedId: selectedField.referencedId,
+        // originalDocument
+      };
 
-    if (depth === currentDepth) {
-      console.log(`Adding new field to stack at depth ${depth} \n`, newField)
-      setFieldStack(prev => [...prev, newField]);
-      setCurrentDepth(prev => prev + 1);
-    } else {
-      console.log(`Updating field stack at depth ${depth} from ${currentDepth} \n`, newField);
-      handleBackNavigation(currentDepth + (depth - currentDepth + 1));
-      setFieldStack(prev => [...prev.slice(0, -1), newField]);
+
+      if (depth === currentDepth) {
+        console.log(`Adding new field to stack at depth ${depth} \n`, newField)
+        setFieldStack(prev => [...prev, newField]);
+        setCurrentDepth(prev => prev + 1);
+      } else {
+        console.log(`Updating field stack at depth ${depth} from ${currentDepth} \n`, newField);
+        handleBackNavigation(currentDepth + (depth - currentDepth + 1));
+        setFieldStack(prev => [...prev.slice(0, -1), newField]);
+      }
+      console.log(`Field stack updated:`, fieldValue, fieldStack);
     }
-    console.log(`Field stack updated:`, fieldValue, fieldStack);
   };
 
   const handleBackNavigation = (targetDepth: number) => {
@@ -169,18 +172,18 @@ const CollectionExplorer: React.FC = () => {
       const parentField = fieldStack[depth - 1];  //  현재 선택한 필드
       const parentType = parentField?.type || ['ObjectId', 'Document', 'Array', 'String', 'Boolean', 'Int32', 'Double', 'Embedded'];
       // if (!parentField) return [];
-      
+
       /**
        * 누르면 RefField로 진입하는거
       */
-     const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced"); // Ref Field, 
-     const isArrayField = parentType.includes('Array'); // Array Field 여부
-     const refDocs = parentField.referencedDocuments;
-     const targetValue = isRefField ? parentField.referencedDocuments![0] : parentField.value; // Ref Field면 refDocs, 아니면 fieldValue
+      const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced"); // Ref Field, 
+      const isArrayField = parentType.includes('Array'); // Array Field 여부
+      const refDocs = parentField.referencedDocuments;
+      const targetValue = isRefField ? parentField.referencedDocuments![0] : parentField.value; // Ref Field면 refDocs, 아니면 fieldValue
       console.log('\n----------------------\ngetFieldsAtDepth called for depth:', depth, '\nparentField:', parentField, '\ntargetValue:', targetValue, '\nisRefField:', isRefField, '\ncanTraverse:', canTraverse(targetValue, parentType));
 
-      if (!canTraverse(targetValue, parentType))  return []; // 현재 필드가 탐색 가능한지 확인
-      
+      if (!canTraverse(targetValue, parentType)) return []; // 현재 필드가 탐색 가능한지 확인
+
       return (isArrayField ? targetValue : Object.entries(targetValue).filter(([key]) => key !== '_id')).map((item: any, index: number) => {
         { // Array면 [a, b, c]=> a/b/c 반환
           // Array 아니면(=Doc) {a:1, b:2, c:3} => ['a', 1]/[Object.entries(targetValue).filter([key] !== '_id')'b', 2]/['c', 3] 반환)
