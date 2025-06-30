@@ -258,9 +258,7 @@ const CollectionExplorer: React.FC = () => {
       {/* 상단 네비게이션 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-2 pt-3 pb-3 mb-4 overflow-hidden">
         <div className="relative">
-          <div className="flex items-center space-x-3 text-sm overflow-x-auto scrollbar-hide p-1 pt-0"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none',
-             }}
+          <div className="side-scroll flex items-center space-x-3 text-sm overflow-x-auto p-1 pt-0"
             ref={(el) => {
               if (el) {
                 el.scrollLeft = el.scrollWidth - el.clientWidth;
@@ -406,7 +404,7 @@ const CollectionExplorer: React.FC = () => {
             </div>
           </div>
 
-          {/* 동적 필드 섹션들 */}
+          {/* 동적 필드 섹션들 - 모든 섹션 출력하되 최근 3개만 Field 렌더링 */}
           {Array.from({ length: Math.max(1, currentDepth + 1) }, (_, index) => {
             const totalSections = Math.max(1, currentDepth + 1);
             const isLastSection = index === totalSections - 1;
@@ -415,7 +413,10 @@ const CollectionExplorer: React.FC = () => {
             const parentType = parentField?.type || [];
             const hasRefField = parentField?.type.includes('ObjectId') || false;
             const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced");
-            const referencedId = parentField?.referencedId;  // Ref ObjectID O
+            const referencedId = parentField?.referencedId;
+
+            // 렌더링 여부 결정: 최근 3개 섹션만 true
+            const shouldRenderFields = index >= Math.max(0, totalSections - 3);
 
             return (
               <div
@@ -448,6 +449,7 @@ const CollectionExplorer: React.FC = () => {
                   referencedDatabase={parentField?.referencedDatabase || null}
                   referencedCollection={parentField?.referencedCollection || null}
                   parentFieldPath={parentField?.path || []}
+                  shouldRenderFields={shouldRenderFields}
                   onFieldSelect={handleFieldSelect}
                   onBackNavigation={handleBackNavigation}
                 />

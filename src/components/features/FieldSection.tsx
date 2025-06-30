@@ -17,6 +17,8 @@ interface FieldSectionProps {
   referencedCollection?: string[] | null;
   parentFieldPath?: string[];
   colSpan?: number;
+  // 새로 추가된 prop: 렌더링 여부를 결정
+  shouldRenderFields?: boolean;
   onFieldSelect: (selectedField: FieldPath, parentPath: string[], depth: number) => void;
   onBackNavigation: (targetDepth: number) => void;
 }
@@ -36,10 +38,11 @@ const FieldSection: React.FC<FieldSectionProps> = ({
   referencedCollection,
   parentFieldPath,
   colSpan = 1,
+  shouldRenderFields = true, // 기본값은 true
   onFieldSelect,
   onBackNavigation
 }) => {
-  return (
+  return !shouldRenderFields ? <div>hi</div>: (
     <div
       className={`${colSpan === 2 ? 'col-span-2' : ''} bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full transition-all duration-300 ${isActive ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full'
         } ${hasRefField ? 'border-blue-300 shadow-blue-100' : ''} ${hasRefField && referencedId ? 'border-cyan-300 shadow-cyan-100' : ''}`}
