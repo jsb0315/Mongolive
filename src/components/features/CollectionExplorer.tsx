@@ -1,9 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import {
-  mockDocuments,
-  Collection,
-  MongoDocument,
-} from '../../data/mockData';
 import { useDatabaseContext } from '../../contexts/DatabaseContext';
 import { FieldPath } from '../../types/collectionTypes';
 import FieldSection from './FieldSection';
@@ -15,8 +10,98 @@ import {
   resolveReference,
 } from '../../utils/mongoUtils';
 
+// API 타입 정의
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  error?: string;
+  metadata?: {
+    totalCount: number;
+    returnedCount: number;
+    skip: number;
+    limit: number;
+  };
+}
+
+interface Collection {
+  name: string;
+  type?: string;
+  options?: any;
+}
+
+interface Database {
+  name: string;
+  sizeOnDisk: number;
+  collections: Collection[];
+}
+
+interface MongoDocument {
+  _id: any;
+  [key: string]: any;
+}
+
+// API 호출 함수들
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+const apiClient = {
+  async getDatabases(): Promise<Database[]> {
+    const response = await fetch(`${API_BASE_URL}/api/databases`);
+    const result: ApiResponse<Database[]> = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to fetch databases');
+    }
+    return result.data;
+  },
+
+  async getDocuments(dbName: string, collectionName: string, options: {
+    query?: string;
+    projection?: string;
+    sort?: string;
+    limit?: number;
+    skip?: number;
+  } = {}): Promise<{ documents: MongoDocument[], metadata: any }> {
+    const params = new URLSearchParams({
+      query: options.query || '{}',
+      projection: options.projection || '{}',
+      sort: options.sort || '{}',
+      limit: (options.limit || 20).toString(),
+      skip: (options.skip || 0).toString()
+    });
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/databases/${encodeURIComponent(dbName)}/collections/${encodeURIComponent(collectionName)}/documents?${params}`
+    );
+    
+    const result: ApiResponse<MongoDocument[]> = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to fetch documents');
+    }
+    
+    return {
+      documents: result.data,
+      metadata: result.metadata
+    };
+  },
+
+  async getCollectionInfo(dbName: string, collectionName: string) {
+    const response = await fetch(
+      `${API_BASE_URL}/api/databases/${encodeURIComponent(dbName)}/collections/${encodeURIComponent(collectionName)}`
+    );
+    
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to fetch collection info');
+    }
+    
+    return result.data;
+  }
+};
+
 const CollectionExplorer: React.FC = () => {
   const { selectedDatabase } = useDatabaseContext();
+  
+  // State 관리
+  const [databases, setDatabases] = useState<Database[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [documents, setDocuments] = useState<MongoDocument[]>([]);
@@ -24,11 +109,44 @@ const CollectionExplorer: React.FC = () => {
   const [selectedFields, setSelectedFields] = useState<(string | null)[]>([]);
   const [fieldStack, setFieldStack] = useState<FieldPath[]>([]);
   const [currentDepth, setCurrentDepth] = useState<number>(0);
+  
+  // Loading states
+  const [loading, setLoading] = useState({
+    databases: false,
+    collections: false,
+    documents: false
+  });
+  
+  const [error, setError] = useState<string | null>(null);
 
-  // 선택된 데이터베이스가 변경될 때마다 컬렉션 목록 업데이트
+  // 데이터베이스 목록 로드
+  useEffect(() => {
+    const loadDatabases = async () => {
+      try {
+        setLoading(prev => ({ ...prev, databases: true }));
+        setError(null);
+        const databaseList = await apiClient.getDatabases();
+        setDatabases(databaseList);
+      } catch (err) {
+        console.error('Failed to load databases:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load databases');
+      } finally {
+        setLoading(prev => ({ ...prev, databases: false }));
+      }
+    };
+
+    loadDatabases();
+  }, []);
+
+  // 선택된 데이터베이스가 변경될 때 컬렉션 목록 업데이트
   useEffect(() => {
     if (selectedDatabase) {
-      setCollections(selectedDatabase.collections);
+      // API에서 로드한 데이터베이스 목록에서 선택된 데이터베이스 찾기
+      const dbData = databases.find(db => db.name === selectedDatabase.name);
+      if (dbData) {
+        setCollections(dbData.collections);
+      }
+      
       // 데이터베이스가 변경되면 선택 상태 초기화
       setSelectedCollection(null);
       setDocuments([]);
@@ -39,21 +157,38 @@ const CollectionExplorer: React.FC = () => {
     } else {
       setCollections([]);
     }
-  }, [selectedDatabase]);
+  }, [selectedDatabase, databases]);
 
-  const handleCollectionSelect = (collectionName: string) => {
+  const handleCollectionSelect = async (collectionName: string) => {
     if (!selectedDatabase) return;
 
-    console.log(`\n==================================== \nSelecting collection: ${collectionName} from database: ${selectedDatabase.name}`);
-    setSelectedCollection(collectionName);
+    try {
+      console.log(`\n==================================== \nSelecting collection: ${collectionName} from database: ${selectedDatabase.name}`);
+      
+      setLoading(prev => ({ ...prev, documents: true }));
+      setError(null);
+      setSelectedCollection(collectionName);
 
-    // 데이터베이스/컬렉션 형태로 키 생성
-    const documentKey = `${selectedDatabase.name}/${collectionName}`;
-    setDocuments(mockDocuments[documentKey] || []);
-    setSelectedDocument(null);
-    setSelectedFields([]);
-    setFieldStack([]);
-    setCurrentDepth(0);
+      // API에서 문서 목록 로드
+      const result = await apiClient.getDocuments(selectedDatabase.name, collectionName, {
+        limit: 50 // 처음에는 50개만 로드
+      });
+
+      setDocuments(result.documents);
+      setSelectedDocument(null);
+      setSelectedFields([]);
+      setFieldStack([]);
+      setCurrentDepth(0);
+
+      console.log(`Loaded ${result.documents.length} documents from ${selectedDatabase.name}/${collectionName}`);
+      
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load documents');
+      setDocuments([]);
+    } finally {
+      setLoading(prev => ({ ...prev, documents: false }));
+    }
   };
 
   const handleDocumentSelect = (document: MongoDocument) => {
@@ -107,9 +242,7 @@ const CollectionExplorer: React.FC = () => {
         referencedCollection: selectedField.referencedCollection,
         referencedDatabase: selectedField.referencedDatabase,
         referencedId: selectedField.referencedId,
-        // originalDocument
       };
-
 
       if (depth === currentDepth) {
         console.log(`Adding new field to stack at depth ${depth} \n`, newField)
@@ -134,7 +267,47 @@ const CollectionExplorer: React.FC = () => {
     }
   };
 
-  // depth에 따른 필드 목록 가져오기 (Reference와 ReferencedDocument 지원 추가)
+  // API 기반 참조 해결 함수
+  const resolveReferenceAPI = async (objectId: any, currentDb: string): Promise<{
+    document: MongoDocument | null;
+    collection: string | null;
+    database: string | null;
+  }> => {
+    try {
+      // 현재 데이터베이스의 모든 컬렉션에서 해당 ObjectId 검색
+      const currentDatabase = databases.find(db => db.name === currentDb);
+      if (!currentDatabase) {
+        return { document: null, collection: null, database: null };
+      }
+
+      for (const collection of currentDatabase.collections) {
+        try {
+          const result = await apiClient.getDocuments(currentDb, collection.name, {
+            query: JSON.stringify({ _id: objectId }),
+            limit: 1
+          });
+
+          if (result.documents.length > 0) {
+            return {
+              document: result.documents[0],
+              collection: collection.name,
+              database: currentDb
+            };
+          }
+        } catch (err) {
+          // 개별 컬렉션 검색 실패는 무시하고 계속
+          console.warn(`Failed to search in ${currentDb}/${collection.name}:`, err);
+        }
+      }
+
+      return { document: null, collection: null, database: null };
+    } catch (error) {
+      console.error('Failed to resolve reference:', error);
+      return { document: null, collection: null, database: null };
+    }
+  };
+
+  // depth에 따른 필드 목록 가져오기 (API 기반 참조 해결 포함)
   const getFieldsAtDepth = (depth: number): FieldPath[] => {
     if (!selectedDocument) return [];
 
@@ -149,12 +322,11 @@ const CollectionExplorer: React.FC = () => {
           let document: any[] | null = null;
           let collection: any[] | null = null;
 
+          // ObjectId 참조는 비동기로 처리하므로 초기에는 null로 설정
+          // 실제 참조 해결은 사용자가 필드를 클릭할 때 수행
           if (isObjectId(value)) {
-            console.log(`====>\n Depth 0 Resolving: ${key}`);
-            const resolvedRef = resolveReference(value, selectedDatabase);
-            database = resolvedRef.database || null;
-            document = resolvedRef?.document ? [resolvedRef?.document] : [{}];
-            collection = resolvedRef.collection ? [resolvedRef.collection] : [{}];
+            console.log(`====>\n Depth 0 ObjectId detected: ${key} = ${value}`);
+            // TODO: 비동기 참조 해결을 위한 로직 추가 필요
           }
 
           return {
@@ -170,54 +342,43 @@ const CollectionExplorer: React.FC = () => {
         });
     } else {
       // 중첩된 레벨의 필드들
-      const parentField = fieldStack[depth - 1];  //  현재 선택한 필드
+      const parentField = fieldStack[depth - 1];
       const parentType = parentField?.type || ['ObjectId', 'Document', 'Array', 'String', 'Boolean', 'Int32', 'Double', 'Embedded'];
-      // if (!parentField) return [];
 
-      /**
-       * 누르면 RefField로 진입하는거
-      */
-      const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced"); // Ref Field, 
-      const isArrayField = parentType.includes('Array'); // Array Field 여부
+      const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced");
+      const isArrayField = parentType.includes('Array');
       const refDocs = parentField.referencedDocuments;
-      const targetValue = isRefField ? parentField.referencedDocuments![0] : parentField.value; // Ref Field면 refDocs, 아니면 fieldValue
+      const targetValue = isRefField ? parentField.referencedDocuments![0] : parentField.value;
+      
       console.log('\n----------------------\ngetFieldsAtDepth called for depth:', depth, '\nparentField:', parentField, '\ntargetValue:', targetValue, '\nisRefField:', isRefField, '\ncanTraverse:', canTraverse(targetValue, parentType));
 
-      if (!canTraverse(targetValue, parentType)) return []; // 현재 필드가 탐색 가능한지 확인
+      if (!canTraverse(targetValue, parentType)) return [];
 
       return (isArrayField ? targetValue : Object.entries(targetValue).filter(([key]) => key !== '_id')).map((item: any, index: number) => {
-        { // Array면 [a, b, c]=> a/b/c 반환
-          // Array 아니면(=Doc) {a:1, b:2, c:3} => ['a', 1]/[Object.entries(targetValue).filter([key] !== '_id')'b', 2]/['c', 3] 반환)
-          const key = isArrayField ? `[${index}]` : item[0];
-          const value = isArrayField ? item : item[1];
-          const fieldType = getMongoType(value);
-          const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
-          let resolvedRef = null;
-          if (isRefField) {
-            resolvedRef = resolveReference(value, selectedDatabase);
-            console.log(`====>\n Depth ${depth} Resolving: ${value}`, resolvedRef);
-          }
-          return {
-            name: key,
-            value: value,
-            path: [...parentField.path, key],
-            type: fieldType,
-            referencedDatabase: isRefField ? resolvedRef?.database || null : parentField.referencedDatabase,
-            referencedCollection: isRefField ? resolvedRef?.collection || null : parentField.referencedCollection,
-            referencedDocuments: isRefField ? (resolvedRef?.document ? [resolvedRef.document] : [{}]) : null,
-            referencedId: isRefField ? value : parentField.referencedId, // Ref Field면 ObjectId, 아니면 null
-          } as FieldPath;
-        }
+        const key = isArrayField ? `[${index}]` : item[0];
+        const value = isArrayField ? item : item[1];
+        const fieldType = getMongoType(value);
+        const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
+        
+        // API 기반 참조 해결은 필요시 비동기로 처리
+        // 현재는 기본값으로 설정
+        return {
+          name: key,
+          value: value,
+          path: [...parentField.path, key],
+          type: fieldType,
+          referencedDatabase: isRefField ? null : parentField.referencedDatabase, // API 호출로 해결 필요
+          referencedCollection: isRefField ? null : parentField.referencedCollection,
+          referencedDocuments: isRefField ? null : null,
+          referencedId: isRefField ? value : parentField.referencedId,
+        } as FieldPath;
       });
     }
   };
 
-  // 현재 위치 네비게이션 생성 (Reference와 ReferencedDocument 정보 추가)
+  // 현재 위치 네비게이션 생성
   const getBreadcrumb = () => {
     const items = [];
-    // if (selectedDatabase) {
-    //   items.push(selectedDatabase.name);
-    // }
     if (selectedCollection) {
       items.push(selectedCollection);
     }
@@ -226,18 +387,36 @@ const CollectionExplorer: React.FC = () => {
     }
     fieldStack.forEach(field => {
       if (field.type.includes('ObjectId') && field.type.length === 2 && field.referencedDatabase && field.referencedCollection) {
-        // 참조된 필드 이름과 데이터베이스/컬렉션 정보 추가
         items.push(`${field.name} → (${field.referencedDatabase}/${field.referencedCollection})`);
       } else if (field.referencedId && field.referencedDatabase && field.referencedCollection) {
-        // 참조된 필드 이름과 데이터베이스/컬렉션 정보 추가
         items.push(`${field.name} (${field.referencedDatabase}/${field.referencedCollection})`);
       } else {
-        // 일반 필드 이름만 추가
         items.push(`${field.name}`);
       }
     });
     return items;
   };
+
+  // 에러 상태 렌더링
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center text-red-500">
+          <svg className="w-16 h-16 mx-auto text-red-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <p className="text-lg font-medium">Error Loading Data</p>
+          <p className="text-sm">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!selectedDatabase) {
     return (
@@ -269,7 +448,10 @@ const CollectionExplorer: React.FC = () => {
                 <svg className="w-4 h-4 text-slate-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                 </svg>
-                <span className="text-slate-700 font-medium whitespace-nowrap">{selectedDatabase ? selectedDatabase.name : 'Database'}</span>
+                <span className="text-slate-700 font-medium whitespace-nowrap">
+                  {selectedDatabase ? selectedDatabase.name : 'Database'}
+                  {loading.databases && <span className="ml-2 text-xs">(Loading...)</span>}
+                </span>
               </div>
 
               {getBreadcrumb().map((item, index) => (
@@ -299,9 +481,6 @@ const CollectionExplorer: React.FC = () => {
               ))}
             </div>
           </div>
-
-          {/* 스크롤 힌트 그라데이션 */}
-          {/* <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-l from-transparent to-white pointer-events-none z-50"></div> */}
         </div>
       </div>
 
@@ -321,34 +500,46 @@ const CollectionExplorer: React.FC = () => {
                   <svg className="w-4 h-4 mr-2 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
-                  <span className="truncate">Collections ({collections.length})</span>
+                  <span className="truncate">
+                    Collections ({collections.length})
+                    {loading.collections && <span className="ml-1 text-xs">(Loading...)</span>}
+                  </span>
                 </h3>
               </div>
               <div className="flex-1 flex-col overflow-y-auto p-2 max-h-full overflow-x-hidden">
-                {collections.map((collection, index) => (
-                  <div
-                    key={collection.name}
-                    onClick={() => handleCollectionSelect(collection.name)}
-                    className={`p-3 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden ${index === collections.length - 1 ? 'mb-0' : 'mb-2'
-                      } ${selectedCollection === collection.name
-                        ? 'bg-green-50 border border-green-200 shadow-sm'
-                        : 'hover:bg-gray-50 border border-transparent'
-                      } flex-1 min-w-0`}
-                  >
-                    <div className="flex items-center justify-between relative min-w-0">
-                      <h4 className="font-medium text-gray-900 text-sm truncate">{collection.name}</h4>
-                      {selectedCollection === collection.name && (
-                        <svg className="w-4 h-4 text-green-600 absolute right-0 bg-green-50 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500 overflow-hidden">
-                      <div className="truncate">{collection.documentCount.toLocaleString()} docs</div>
-                      <div className="truncate">{collection.size}</div>
-                    </div>
+                {loading.collections ? (
+                  <div className="p-4 text-center text-gray-500 text-sm">
+                    <div className="truncate">Loading collections...</div>
                   </div>
-                ))}
+                ) : collections.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500 text-sm">
+                    <div className="truncate">No collections found</div>
+                  </div>
+                ) : (
+                  collections.map((collection, index) => (
+                    <div
+                      key={collection.name}
+                      onClick={() => handleCollectionSelect(collection.name)}
+                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden ${index === collections.length - 1 ? 'mb-0' : 'mb-2'
+                        } ${selectedCollection === collection.name
+                          ? 'bg-green-50 border border-green-200 shadow-sm'
+                          : 'hover:bg-gray-50 border border-transparent'
+                        } flex-1 min-w-0`}
+                    >
+                      <div className="flex items-center justify-between relative min-w-0">
+                        <h4 className="font-medium text-gray-900 text-sm truncate">{collection.name}</h4>
+                        {selectedCollection === collection.name && (
+                          <svg className="w-4 h-4 text-green-600 absolute right-0 bg-green-50 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500 overflow-hidden">
+                        <div className="truncate">Type: {collection.type || 'collection'}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -361,13 +552,20 @@ const CollectionExplorer: React.FC = () => {
                   <svg className="w-4 h-4 mr-2 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span className="truncate">Documents {selectedCollection && `(${documents.length})`}</span>
+                  <span className="truncate">
+                    Documents {selectedCollection && `(${documents.length})`}
+                    {loading.documents && <span className="ml-1 text-xs">(Loading...)</span>}
+                  </span>
                 </h3>
               </div>
               <div className="flex-1 flex-col overflow-y-auto p-2 max-h-full overflow-x-hidden">
                 {!selectedCollection ? (
                   <div className="p-4 text-center text-gray-500 text-sm">
                     <div className="truncate">Select a collection to view documents</div>
+                  </div>
+                ) : loading.documents ? (
+                  <div className="p-4 text-center text-gray-500 text-sm">
+                    <div className="truncate">Loading documents...</div>
                   </div>
                 ) : documents.length === 0 ? (
                   <div className="p-4 text-center text-gray-500 text-sm">
