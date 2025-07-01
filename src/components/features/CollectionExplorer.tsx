@@ -9,102 +9,22 @@ import {
   getValueByPath,
   resolveReference,
 } from '../../utils/mongoUtils';
-
-// API 타입 정의
-interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  error?: string;
-  metadata?: {
-    totalCount: number;
-    returnedCount: number;
-    skip: number;
-    limit: number;
-  };
-}
-
-interface Collection {
-  name: string;
-  type?: string;
-  options?: any;
-}
-
-interface Database {
-  name: string;
-  sizeOnDisk: number;
-  collections: Collection[];
-}
+import { apiClient, APIDatabase, APICollection, APICollectionSummary, APIDocumentSummary } from '../../utils/apiClient';
 
 interface MongoDocument {
   _id: any;
   [key: string]: any;
 }
 
-// API 호출 함수들
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://14.55.202.84:3001';
-
-const apiClient = {
-  async getDatabases(): Promise<Database[]> {
-    const response = await fetch(`${API_BASE_URL}/api/databases`);
-    const result: ApiResponse<Database[]> = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to fetch databases');
-    }
-    return result.data;
-  },
-
-  async getDocuments(dbName: string, collectionName: string, options: {
-    query?: string;
-    projection?: string;
-    sort?: string;
-    limit?: number;
-    skip?: number;
-  } = {}): Promise<{ documents: MongoDocument[], metadata: any }> {
-    const params = new URLSearchParams({
-      query: options.query || '{}',
-      projection: options.projection || '{}',
-      sort: options.sort || '{}',
-      limit: (options.limit || 20).toString(),
-      skip: (options.skip || 0).toString()
-    });
-
-    const response = await fetch(
-      `${API_BASE_URL}/api/databases/${encodeURIComponent(dbName)}/collections/${encodeURIComponent(collectionName)}/documents?${params}`
-    );
-    
-    const result: ApiResponse<MongoDocument[]> = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to fetch documents');
-    }
-    
-    return {
-      documents: result.data,
-      metadata: result.metadata
-    };
-  },
-
-  async getCollectionInfo(dbName: string, collectionName: string) {
-    const response = await fetch(
-      `${API_BASE_URL}/api/databases/${encodeURIComponent(dbName)}/collections/${encodeURIComponent(collectionName)}`
-    );
-    
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to fetch collection info');
-    }
-    
-    return result.data;
-  }
-};
-
 const CollectionExplorer: React.FC = () => {
   const { selectedDatabase } = useDatabaseContext();
   
   // State 관리
-  const [databases, setDatabases] = useState<Database[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
+  const [databases, setDatabases] = useState<APIDatabase[]>([]);
+  const [collections, setCollections] = useState<APICollection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<MongoDocument[]>([]);
+  const [collectionSummary, setCollectionSummary] = useState<APICollectionSummary | null>(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<MongoDocument | null>(null);
   const [selectedFields, setSelectedFields] = useState<(string | null)[]>([]);
   const [fieldStack, setFieldStack] = useState<FieldPath[]>([]);
@@ -114,18 +34,19 @@ const CollectionExplorer: React.FC = () => {
   const [loading, setLoading] = useState({
     databases: false,
     collections: false,
-    documents: false
+    documents: false,
+    document: false
   });
   
   const [error, setError] = useState<string | null>(null);
 
-  // 데이터베이스 목록 로드
+  // 데이터베이스 목록 로드 (summary endpoint 사용)
   useEffect(() => {
     const loadDatabases = async () => {
       try {
         setLoading(prev => ({ ...prev, databases: true }));
         setError(null);
-        const databaseList = await apiClient.getDatabases();
+        const databaseList = await apiClient.getDatabasesSummary();
         setDatabases(databaseList);
       } catch (err) {
         console.error('Failed to load databases:', err);
@@ -141,7 +62,7 @@ const CollectionExplorer: React.FC = () => {
   // 선택된 데이터베이스가 변경될 때 컬렉션 목록 업데이트
   useEffect(() => {
     if (selectedDatabase) {
-      // API에서 로드한 데이터베이스 목록에서 선택된 데이터베이스 찾기
+      // summary API에서 로드한 데이터베이스 목록에서 선택된 데이터베이스 찾기
       const dbData = databases.find(db => db.name === selectedDatabase.name);
       if (dbData) {
         setCollections(dbData.collections);
@@ -149,7 +70,8 @@ const CollectionExplorer: React.FC = () => {
       
       // 데이터베이스가 변경되면 선택 상태 초기화
       setSelectedCollection(null);
-      setDocuments([]);
+      setCollectionSummary(null);
+      setSelectedDocumentId(null);
       setSelectedDocument(null);
       setSelectedFields([]);
       setFieldStack([]);
@@ -169,34 +91,52 @@ const CollectionExplorer: React.FC = () => {
       setError(null);
       setSelectedCollection(collectionName);
 
-      // API에서 문서 목록 로드
-      const result = await apiClient.getDocuments(selectedDatabase.name, collectionName, {
-        limit: 10 // 처음에는 10개만 로드
-      });
-
-      setDocuments(result.documents);
+      // summary API에서 컬렉션 요약 정보 로드
+      const summary = await apiClient.getCollectionSummary(selectedDatabase.name, collectionName);
+      setCollectionSummary(summary);
+      setSelectedDocumentId(null);
       setSelectedDocument(null);
       setSelectedFields([]);
       setFieldStack([]);
       setCurrentDepth(0);
 
-      console.log(result, `Loaded ${result.documents.length} documents from ${selectedDatabase.name}/${collectionName}`);
+      console.log(summary, `Loaded collection summary for ${selectedDatabase.name}/${collectionName}`);
       
     } catch (err) {
-      console.error('Failed to load documents:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load documents');
-      setDocuments([]);
+      console.error('Failed to load collection summary:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load collection summary');
+      setCollectionSummary(null);
     } finally {
       setLoading(prev => ({ ...prev, documents: false }));
     }
   };
 
-  const handleDocumentSelect = (document: MongoDocument) => {
-    console.log(`\n==================================== \nSelecting document: `, document);
-    setSelectedDocument(document);
-    setSelectedFields([]);
-    setFieldStack([]);
-    setCurrentDepth(0);
+  const handleDocumentSelect = async (docId: string) => {
+    if (!selectedDatabase || !selectedCollection) return;
+
+    try {
+      console.log(`\n==================================== \nSelecting document: ${docId}`);
+      
+      setLoading(prev => ({ ...prev, document: true }));
+      setError(null);
+      setSelectedDocumentId(docId);
+
+      // 개별 문서의 전체 데이터 로드
+      const document = await apiClient.getDocument(selectedDatabase.name, selectedCollection, docId);
+      setSelectedDocument(document);
+      setSelectedFields([]);
+      setFieldStack([]);
+      setCurrentDepth(0);
+
+      console.log(document, `Loaded full document for ${selectedDatabase.name}/${selectedCollection}/${docId}`);
+      
+    } catch (err) {
+      console.error('Failed to load document:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load document');
+      setSelectedDocument(null);
+    } finally {
+      setLoading(prev => ({ ...prev, document: false }));
+    }
   };
 
   const handleFieldSelect = (selectedField: FieldPath, parentPath: string[] = [], depth: number) => {
@@ -267,39 +207,16 @@ const CollectionExplorer: React.FC = () => {
     }
   };
 
-  // API 기반 참조 해결 함수
+  // API 기반 참조 해결 함수 (현재는 단순화)
   const resolveReferenceAPI = async (objectId: any, currentDb: string): Promise<{
     document: MongoDocument | null;
     collection: string | null;
     database: string | null;
   }> => {
     try {
-      // 현재 데이터베이스의 모든 컬렉션에서 해당 ObjectId 검색
-      const currentDatabase = databases.find(db => db.name === currentDb);
-      if (!currentDatabase) {
-        return { document: null, collection: null, database: null };
-      }
-
-      for (const collection of currentDatabase.collections) {
-        try {
-          const result = await apiClient.getDocuments(currentDb, collection.name, {
-            query: JSON.stringify({ _id: objectId }),
-            limit: 1
-          });
-
-          if (result.documents.length > 0) {
-            return {
-              document: result.documents[0],
-              collection: collection.name,
-              database: currentDb
-            };
-          }
-        } catch (err) {
-          // 개별 컬렉션 검색 실패는 무시하고 계속
-          console.warn(`Failed to search in ${currentDb}/${collection.name}:`, err);
-        }
-      }
-
+      // summary 기반 탐색에서는 참조 해결을 단순화
+      // 실제 참조 해결은 사용자가 특정 document를 선택할 때 getDocument API로 처리
+      console.log(`Reference resolution for ${objectId} in ${currentDb} - simplified for summary mode`);
       return { document: null, collection: null, database: null };
     } catch (error) {
       console.error('Failed to resolve reference:', error);
@@ -382,8 +299,8 @@ const CollectionExplorer: React.FC = () => {
     if (selectedCollection) {
       items.push(selectedCollection);
     }
-    if (selectedDocument) {
-      items.push(`${selectedDocument._id.toString().substring(0, 8)}...`);
+    if (selectedDocumentId) {
+      items.push(`${selectedDocumentId.toString().substring(0, 8)}...`);
     }
     fieldStack.forEach(field => {
       if (field.type.includes('ObjectId') && field.type.length === 2 && field.referencedDatabase && field.referencedCollection) {
@@ -535,7 +452,7 @@ const CollectionExplorer: React.FC = () => {
                         )}
                       </div>
                       <div className="mt-1 text-xs text-gray-500 overflow-hidden">
-                        <div className="truncate">Type: {collection.type || 'collection'}</div>
+                        <div className="truncate">Documents: {collection.documentCount ?? '-'}</div>
                       </div>
                     </div>
                   ))
@@ -553,7 +470,7 @@ const CollectionExplorer: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <span className="truncate">
-                    Documents {selectedCollection && `(${documents.length})`}
+                    Documents {selectedCollection && collectionSummary && `(${collectionSummary.documents.length})`}
                     {loading.documents && <span className="ml-1 text-xs">(Loading...)</span>}
                   </span>
                 </h3>
@@ -567,33 +484,33 @@ const CollectionExplorer: React.FC = () => {
                   <div className="p-4 text-center text-gray-500 text-sm">
                     <div className="truncate">Loading documents...</div>
                   </div>
-                ) : documents.length === 0 ? (
+                ) : !collectionSummary || collectionSummary.documents.length === 0 ? (
                   <div className="p-4 text-center text-gray-500 text-sm">
                     <div className="truncate">No documents found</div>
                   </div>
                 ) : (
-                  documents.map((doc, index) => (
+                  collectionSummary.documents.map((docSummary: APIDocumentSummary, index: number) => (
                     <div
-                      key={doc._id.toString()}
-                      onClick={() => handleDocumentSelect(doc)}
-                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden ${index === documents.length - 1 ? 'mb-0' : 'mb-2'
-                        } ${selectedDocument?._id.toString() === doc._id.toString()
+                      key={docSummary._id.toString()}
+                      onClick={() => handleDocumentSelect(docSummary._id.toString())}
+                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden ${index === collectionSummary.documents.length - 1 ? 'mb-0' : 'mb-2'
+                        } ${selectedDocumentId === docSummary._id.toString()
                           ? 'bg-blue-50 border border-blue-200 shadow-sm'
                           : 'hover:bg-gray-50 border border-transparent'
                         }`}
                     >
                       <div className="flex items-center justify-between relative min-w-0">
                         <div className="font-mono text-xs text-gray-600 truncate">
-                          {doc._id.toString()}
+                          {docSummary._id.toString()}
                         </div>
-                        {selectedDocument?._id.toString() === doc._id.toString() && (
+                        {selectedDocumentId === docSummary._id.toString() && (
                           <svg className="w-4 h-4 text-blue-600 flex-shrink-0 absolute right-0 bg-blue-50" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>
                         )}
                       </div>
                       <div className="mt-1 text-xs text-gray-500 truncate">
-                        {Object.keys(doc).filter(key => key !== '_id').length} fields
+                        {docSummary.fieldCount} fields
                       </div>
                     </div>
                   ))

@@ -12,6 +12,19 @@ export interface APICollection {
   name: string;
   type: string;
   options: any;
+  documentCount?: number; // For optimized summary endpoint
+}
+
+export interface APIDocumentSummary {
+  _id: any;
+  fieldCount: number;
+}
+
+export interface APICollectionSummary {
+  name: string;
+  database: string;
+  totalDocuments: number;
+  documents: APIDocumentSummary[];
 }
 
 export interface APIResponse<T> {
@@ -45,13 +58,44 @@ class APIClient {
     return response.json();
   }
 
-  // Fetch all databases
+  // Fetch all databases (original)
   async getDatabases(): Promise<APIDatabase[]> {
     const response = await this.request<APIResponse<APIDatabase[]>>('/api/databases');
     if (!response.success) {
       throw new Error(response.error || 'Failed to fetch databases');
     }
     return response.data || [];
+  }
+
+  // Fetch all databases with collection document counts (optimized)
+  async getDatabasesSummary(): Promise<APIDatabase[]> {
+    const response = await this.request<APIResponse<APIDatabase[]>>('/api/databases/summary');
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to fetch databases summary');
+    }
+    return response.data || [];
+  }
+
+  // Fetch collection summary with document IDs and field counts (optimized)
+  async getCollectionSummary(databaseName: string, collectionName: string): Promise<APICollectionSummary> {
+    const response = await this.request<APIResponse<APICollectionSummary>>(
+      `/api/databases/${encodeURIComponent(databaseName)}/collections/${encodeURIComponent(collectionName)}/summary`
+    );
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to fetch collection summary');
+    }
+    return response.data!;
+  }
+
+  // Fetch specific document by ID (optimized)
+  async getDocument(databaseName: string, collectionName: string, documentId: string): Promise<any> {
+    const response = await this.request<APIResponse<any>>(
+      `/api/databases/${encodeURIComponent(databaseName)}/collections/${encodeURIComponent(collectionName)}/documents/${encodeURIComponent(documentId)}`
+    );
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to fetch document');
+    }
+    return response.data;
   }
 
   // Fetch collections for a specific database
@@ -95,7 +139,7 @@ export function convertAPIToUIDatabase(apiDb: APIDatabase): import('../data/mock
     totalCollections: apiDb.collections.length,
     collections: apiDb.collections.map(col => ({
       name: col.name,
-      documentCount: 0, // Will be loaded separately when needed
+      documentCount: col.documentCount || 0, // Use actual count from optimized endpoint
       size: 'Unknown', // Will be loaded separately when needed
       indexes: 0, // Will be loaded separately when needed
       database: apiDb.name,

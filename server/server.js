@@ -112,6 +112,64 @@ app.get('/api/databases', async (req, res) => {
   }
 });
 
+// 데이터베이스 목록 조회 (최적화된 - 컬렉션별 문서 개수 포함)
+app.get('/api/databases/summary', async (req, res) => {
+  try {
+    const adminDb = mongoClient.db().admin();
+    const databasesList = await adminDb.listDatabases();
+    
+    const databases = await Promise.all(
+      databasesList.databases.map(async (db) => {
+        try {
+          const database = mongoClient.db(db.name);
+          const collections = await database.listCollections().toArray();
+          
+          // 각 컬렉션의 문서 개수 조회 (병렬 처리로 성능 최적화)
+          const collectionsWithCount = await Promise.all(
+            collections.map(async (col) => {
+              try {
+                const collection = database.collection(col.name);
+                const count = await collection.countDocuments();
+                return {
+                  name: col.name,
+                  type: col.type,
+                  documentCount: count,
+                  options: col.options
+                };
+              } catch (error) {
+                return {
+                  name: col.name,
+                  type: col.type,
+                  documentCount: 0,
+                  options: col.options,
+                  error: error.message
+                };
+              }
+            })
+          );
+          
+          return {
+            name: db.name,
+            sizeOnDisk: db.sizeOnDisk,
+            collections: collectionsWithCount
+          };
+        } catch (error) {
+          return {
+            name: db.name,
+            sizeOnDisk: db.sizeOnDisk,
+            collections: [],
+            error: error.message
+          };
+        }
+      })
+    );
+
+    res.json({ success: true, data: databases });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 컬렉션 정보 조회
 app.get('/api/databases/:dbName/collections/:collectionName', async (req, res) => {
   try {
@@ -272,6 +330,88 @@ app.post('/api/databases/:dbName/collections/:collectionName/aggregate', async (
       success: true,
       data: result,
       count: result.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 컬렉션 문서 요약 (최적화된 - 문서 ID와 필드 개수만)
+app.get('/api/databases/:dbName/collections/:collectionName/summary', async (req, res) => {
+  try {
+    const { dbName, collectionName } = req.params;
+    const db = await getDatabase(dbName);
+    const collection = db.collection(collectionName);
+
+    // 문서 ID들만 가져오기 (빠른 조회)
+    const documentIds = await collection.find({}, { projection: { _id: 1 } }).limit(1000).toArray();
+    
+    // 샘플링을 통한 필드 개수 계산 (성능 최적화)
+    const sampleSize = Math.min(50, documentIds.length);
+    const sampleDocs = documentIds.slice(0, sampleSize);
+    
+    // 샘플 문서들의 실제 필드 개수 계산
+    const sampleFieldCounts = await Promise.all(
+      sampleDocs.map(async (doc) => {
+        const fullDoc = await collection.findOne({ _id: doc._id });
+        return fullDoc ? Object.keys(fullDoc).length : 0;
+      })
+    );
+    
+    // 평균 필드 개수 계산
+    const avgFieldCount = sampleFieldCounts.length > 0 
+      ? Math.round(sampleFieldCounts.reduce((sum, count) => sum + count, 0) / sampleFieldCounts.length)
+      : 0;
+    
+    // 모든 문서에 대해 필드 개수 할당 (샘플 기반)
+    const documentsWithFieldCount = documentIds.map((doc, index) => ({
+      _id: doc._id,
+      fieldCount: index < sampleSize ? sampleFieldCounts[index] : avgFieldCount
+    }));
+
+    const totalCount = await collection.countDocuments();
+
+    res.json({
+      success: true,
+      data: {
+        name: collectionName,
+        database: dbName,
+        totalDocuments: totalCount,
+        documents: documentsWithFieldCount
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 특정 문서 조회 (ID로 전체 문서 가져오기)
+app.get('/api/databases/:dbName/collections/:collectionName/documents/:documentId', async (req, res) => {
+  try {
+    const { dbName, collectionName, documentId } = req.params;
+    const db = await getDatabase(dbName);
+    const collection = db.collection(collectionName);
+
+    // ObjectId 또는 문자열 ID 처리
+    let query;
+    try {
+      query = { _id: new ObjectId(documentId) };
+    } catch {
+      query = { _id: documentId };
+    }
+
+    const document = await collection.findOne(query);
+    
+    if (!document) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Document not found' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: document
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
