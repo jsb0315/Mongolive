@@ -1,5 +1,7 @@
 // API client for MongoDB Live application
-const API_BASE_URL = process.env.REACT_APP_API_URL || `http://${process.env.REACT_APP_IP}:3001`;
+import { io, Socket } from 'socket.io-client';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || `http://${process.env.REACT_APP_IP}:${process.env.API_PORT || 31501}`;
 
 export interface APIDatabase {
   name: string;
@@ -33,8 +35,49 @@ export interface APIResponse<T> {
   error?: string;
 }
 
-class APIClient {
+// WebSocket/ChangeStream 관련 인터페이스
+export interface ChangeStreamEvent {
+  timestamp: string;
+  collectionKey: string;
+  operationType: 'insert' | 'update' | 'delete' | 'replace' | 'drop' | 'rename' | 'dropDatabase' | 'invalidate';
+  documentKey: { _id: any };
+  fullDocument?: any;
+  fullDocumentBeforeChange?: any;
+  updateDescription?: {
+    updatedFields?: Record<string, any>;
+    removedFields?: string[];
+  };
+  updatedPaths?: {
+    path: string;
+    value: any;
+    segments: string[];
+    depth: number;
+  }[];
+  clusterTime?: any;
+}
+
+export interface RealtimeSubscriptionOptions {
+  dbName: string;
+  collectionName: string;
+  query?: string;
+  projection?: string;
+  sort?: string;
+  limit?: number;
+  skip?: number;
+}
+
+export interface RealtimeEventHandlers {
+  onData?: (data: any) => void;
+  onChange?: (change: ChangeStreamEvent) => void;
+  onError?: (error: Error) => void;
+  onSubscribed?: (info: { collectionKey: string; message: string }) => void;
+  onUnsubscribed?: (info: { collectionKey: string; message: string }) => void;
+}
+
+export class APIClient {
   private baseURL: string;
+  private socket: Socket | null = null;
+  private subscriptions: Map<string, RealtimeEventHandlers> = new Map();
 
   constructor(baseURL: string = API_BASE_URL) {
     this.baseURL = baseURL;
@@ -125,6 +168,241 @@ class APIClient {
       throw new Error(response.error || 'Failed to fetch collection details');
     }
     return response.data;
+  }
+
+  // ===================== WebSocket 실시간 기능 =====================
+
+  // WebSocket 연결 초기화
+  private initializeSocket(): Socket {
+    if (this.socket && this.socket.connected) {
+      return this.socket;
+    }
+
+    this.socket = io(this.baseURL, {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      forceNew: false,
+    });
+
+    // 연결 이벤트 핸들러
+    this.socket.on('connect', () => {
+      console.log('🟢 WebSocket connected:', this.socket?.id);
+    });
+
+    this.socket.on('disconnect', (reason) => {
+      console.log('🔴 WebSocket disconnected:', reason);
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error('❌ WebSocket connection error:', error);
+    });
+
+    // 서버에서 오는 실시간 데이터 처리
+    this.socket.on('data', (data) => {
+      this.handleRealtimeData(data);
+    });
+
+    this.socket.on('dataUpdate', (data) => {
+      this.handleRealtimeChange(data);
+    });
+
+    this.socket.on('subscribed', (info) => {
+      this.handleSubscribed(info);
+    });
+
+    this.socket.on('unsubscribed', (info) => {
+      this.handleUnsubscribed(info);
+    });
+
+    this.socket.on('error', (error) => {
+      this.handleRealtimeError(error);
+    });
+
+    return this.socket;
+  }
+
+  // 실시간 데이터 처리
+  private handleRealtimeData(data: any) {
+    const { collectionKey } = data;
+    const handlers = this.subscriptions.get(collectionKey);
+    if (handlers?.onData) {
+      handlers.onData(data);
+    }
+  }
+
+  // 실시간 변경사항 처리
+  private handleRealtimeChange(data: any) {
+    const { change, collectionKey } = data;
+    const handlers = this.subscriptions.get(collectionKey || change?.collectionKey);
+    if (handlers?.onChange && change) {
+      handlers.onChange(change);
+    }
+    if (handlers?.onData && data.data) {
+      handlers.onData(data);
+    }
+  }
+
+  // 구독 성공 처리
+  private handleSubscribed(info: { collectionKey: string; message: string }) {
+    const handlers = this.subscriptions.get(info.collectionKey);
+    if (handlers?.onSubscribed) {
+      handlers.onSubscribed(info);
+    }
+  }
+
+  // 구독 해제 처리
+  private handleUnsubscribed(info: { collectionKey: string; message: string }) {
+    const handlers = this.subscriptions.get(info.collectionKey);
+    if (handlers?.onUnsubscribed) {
+      handlers.onUnsubscribed(info);
+    }
+  }
+
+  // 실시간 에러 처리
+  private handleRealtimeError(error: any) {
+    console.error('❌ Realtime error:', error);
+    // 모든 구독에 에러 전파
+    this.subscriptions.forEach((handlers, collectionKey) => {
+      if (handlers.onError) {
+        const errorObj = error instanceof Error ? error : new Error(error.error || error.message || 'Unknown realtime error');
+        handlers.onError(errorObj);
+      }
+    });
+  }
+
+  // 컬렉션 실시간 구독
+  subscribeToCollection(options: RealtimeSubscriptionOptions, handlers: RealtimeEventHandlers): string {
+    const socket = this.initializeSocket();
+    const collectionKey = `${options.dbName}.${options.collectionName}`;
+    
+    // 핸들러 저장
+    this.subscriptions.set(collectionKey, handlers);
+    
+    // 서버에 구독 요청
+    socket.emit('subscribe', {
+      dbName: options.dbName,
+      collectionName: options.collectionName,
+      query: options.query || '{}',
+      projection: options.projection || '{}',
+      sort: options.sort || '{}',
+      limit: options.limit || 20,
+      skip: options.skip || 0
+    });
+
+    console.log(`📡 Subscribing to ${collectionKey}`);
+    return collectionKey;
+  }
+
+  // 컬렉션 구독 해제
+  unsubscribeFromCollection(dbName: string, collectionName: string): void {
+    const collectionKey = `${dbName}.${collectionName}`;
+    
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('unsubscribe', {
+        dbName,
+        collectionName
+      });
+    }
+    
+    // 로컬 구독 정보 제거
+    this.subscriptions.delete(collectionKey);
+    console.log(`📡 Unsubscribed from ${collectionKey}`);
+  }
+
+  // 모든 구독 해제
+  unsubscribeAll(): void {
+    this.subscriptions.forEach((handlers, collectionKey) => {
+      const [dbName, collectionName] = collectionKey.split('.');
+      this.unsubscribeFromCollection(dbName, collectionName);
+    });
+  }
+
+  // WebSocket 연결 해제
+  disconnect(): void {
+    if (this.socket) {
+      this.unsubscribeAll();
+      this.socket.disconnect();
+      this.socket = null;
+      console.log('🔴 WebSocket disconnected manually');
+    }
+  }
+
+  // WebSocket 연결 상태 확인
+  isConnected(): boolean {
+    return this.socket?.connected || false;
+  }
+
+  // 현재 구독 목록 반환
+  getActiveSubscriptions(): string[] {
+    return Array.from(this.subscriptions.keys());
+  }
+
+  // ===================== ChangeStream 헬퍼 메서드 =====================
+
+  // 변경된 필드의 깊은 경로 분석 (클라이언트 사이드)
+  static findDeepestPaths(updatedFields: Record<string, any>): Array<{
+    path: string;
+    value: any;
+    segments: string[];
+    depth: number;
+  }> {
+    if (!updatedFields) return [];
+    
+    const paths = Object.keys(updatedFields);
+    const deepPaths = [];
+    
+    for (const path of paths) {
+      const segments = path.split('.');
+      let deepestPath = '';
+      let currentValue = updatedFields[path];
+      
+      // 배열 인덱스나 객체 키를 포함한 전체 경로 구성
+      for (let i = 0; i < segments.length; i++) {
+        if (i > 0) deepestPath += '.';
+        deepestPath += segments[i];
+      }
+      
+      deepPaths.push({
+        path: deepestPath,
+        value: currentValue,
+        segments: segments,
+        depth: segments.length
+      });
+    }
+    
+    return deepPaths.sort((a, b) => b.depth - a.depth); // 깊은 순서대로 정렬
+  }
+
+  // 변경사항 타입 체크
+  static isInsert(change: ChangeStreamEvent): boolean {
+    return change.operationType === 'insert';
+  }
+
+  static isUpdate(change: ChangeStreamEvent): boolean {
+    return change.operationType === 'update';
+  }
+
+  static isDelete(change: ChangeStreamEvent): boolean {
+    return change.operationType === 'delete';
+  }
+
+  static isReplace(change: ChangeStreamEvent): boolean {
+    return change.operationType === 'replace';
+  }
+
+  // 변경사항이 특정 문서에 해당하는지 확인
+  static changeAffectsDocument(change: ChangeStreamEvent, documentId: any): boolean {
+    return change.documentKey?._id?.toString() === documentId?.toString();
+  }
+
+  // 변경사항이 특정 필드에 해당하는지 확인
+  static changeAffectsField(change: ChangeStreamEvent, fieldPath: string): boolean {
+    if (!change.updateDescription?.updatedFields) return false;
+    
+    const updatedFields = Object.keys(change.updateDescription.updatedFields);
+    return updatedFields.some(field => 
+      field.startsWith(fieldPath) || fieldPath.startsWith(field)
+    );
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useDatabaseContext } from '../../contexts/DatabaseContext';
 import { FieldPath } from '../../types/collectionTypes';
 import FieldSection from './FieldSection';
@@ -9,7 +9,17 @@ import {
   getValueByPath,
   resolveReference,
 } from '../../utils/mongoUtils';
-import { apiClient, APIDatabase, APICollection, APICollectionSummary, APIDocumentSummary } from '../../utils/apiClient';
+import { 
+  apiClient, 
+  APIClient,
+  APIDatabase, 
+  APICollection, 
+  APICollectionSummary, 
+  APIDocumentSummary,
+  ChangeStreamEvent,
+  RealtimeSubscriptionOptions,
+  RealtimeEventHandlers
+} from '../../utils/apiClient';
 
 interface MongoDocument {
   _id: any;
@@ -30,12 +40,24 @@ const CollectionExplorer: React.FC = () => {
   const [fieldStack, setFieldStack] = useState<FieldPath[]>([]);
   const [currentDepth, setCurrentDepth] = useState<number>(0);
   
+  // 실시간 기능 상태
+  const [isRealtimeEnabled, setIsRealtimeEnabled] = useState<boolean>(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<string>('disconnected');
+  const [lastChangeEvent, setLastChangeEvent] = useState<ChangeStreamEvent | null>(null);
+  const [changeNotifications, setChangeNotifications] = useState<ChangeStreamEvent[]>([]);
+  const maxNotifications = 10; // 최대 알림 개수
+  
+  // 실시간 구독 관리
+  const activeSubscriptionRef = useRef<string | null>(null);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Loading states
   const [loading, setLoading] = useState({
     databases: false,
     collections: false,
     documents: false,
-    document: false
+    document: false,
+    realtime: false
   });
   
   const [error, setError] = useState<string | null>(null);
@@ -314,6 +336,127 @@ const CollectionExplorer: React.FC = () => {
     return items;
   };
 
+  // 실시간 기능 활성화/비활성화 핸들러
+  const handleRealtimeToggle = useCallback(async () => {
+    if (!selectedDatabase || !selectedCollection) return;
+
+    if (isRealtimeEnabled) {
+      // 실시간 비활성화
+      if (activeSubscriptionRef.current) {
+        const [dbName, collectionName] = activeSubscriptionRef.current.split('.');
+        apiClient.unsubscribeFromCollection(dbName, collectionName);
+        activeSubscriptionRef.current = null;
+      }
+      setIsRealtimeEnabled(false);
+      setRealtimeStatus('disconnected');
+      console.log('🔴 Realtime disabled for collection');
+    } else {
+      // 실시간 활성화
+      try {
+        setLoading(prev => ({ ...prev, realtime: true }));
+        setRealtimeStatus('connecting');
+
+        const subscriptionOptions: RealtimeSubscriptionOptions = {
+          dbName: selectedDatabase.name,
+          collectionName: selectedCollection,
+          query: '{}',
+          limit: 1000 // 실시간 감지를 위해 더 많은 문서 추적
+        };
+
+        const eventHandlers: RealtimeEventHandlers = {
+          onData: (data) => {
+            console.log('📡 Initial realtime data received:', data);
+            if (data.type === 'initial' && data.data) {
+              // 초기 데이터로 컬렉션 요약 업데이트 (필요시)
+              console.log('Initial collection data loaded via realtime');
+            }
+          },
+          onChange: (change: ChangeStreamEvent) => {
+            console.log('🔄 Change event received:', change);
+            setLastChangeEvent(change);
+            
+            // 변경 알림 추가
+            setChangeNotifications(prev => {
+              const newNotifications = [change, ...prev].slice(0, maxNotifications);
+              return newNotifications;
+            });
+
+            // 현재 선택된 문서가 변경된 경우 자동 새로고침
+            if (selectedDocumentId && APIClient.changeAffectsDocument(change, selectedDocumentId)) {
+              console.log('🔄 Current document affected, refreshing...');
+              handleDocumentSelect(selectedDocumentId);
+            }
+
+            // 컬렉션 요약 새로고침 (문서 추가/삭제의 경우)
+            if (APIClient.isInsert(change) || APIClient.isDelete(change)) {
+              console.log('🔄 Collection affected, refreshing summary...');
+              refreshCollectionSummary();
+            }
+          },
+          onError: (error: Error) => {
+            console.error('❌ Realtime error:', error);
+            setError(`Realtime error: ${error.message}`);
+            setRealtimeStatus('error');
+            
+            // 자동 재연결 시도
+            if (retryTimeoutRef.current) {
+              clearTimeout(retryTimeoutRef.current);
+            }
+            retryTimeoutRef.current = setTimeout(() => {
+              console.log('🔄 Attempting to reconnect realtime...');
+              handleRealtimeToggle();
+            }, 5000);
+          },
+          onSubscribed: (info) => {
+            console.log('✅ Realtime subscribed:', info);
+            setRealtimeStatus('connected');
+            setError(null);
+          },
+          onUnsubscribed: (info) => {
+            console.log('🔴 Realtime unsubscribed:', info);
+            setRealtimeStatus('disconnected');
+          }
+        };
+
+        const subscriptionKey = apiClient.subscribeToCollection(subscriptionOptions, eventHandlers);
+        activeSubscriptionRef.current = subscriptionKey;
+        setIsRealtimeEnabled(true);
+        
+        console.log('🟢 Realtime enabled for collection:', subscriptionKey);
+        
+      } catch (err) {
+        console.error('Failed to enable realtime:', err);
+        setError(err instanceof Error ? err.message : 'Failed to enable realtime');
+        setRealtimeStatus('error');
+      } finally {
+        setLoading(prev => ({ ...prev, realtime: false }));
+      }
+    }
+  }, [selectedDatabase, selectedCollection, selectedDocumentId, isRealtimeEnabled]);
+
+  // 컬렉션 요약 새로고침
+  const refreshCollectionSummary = useCallback(async () => {
+    if (!selectedDatabase || !selectedCollection) return;
+    
+    try {
+      const summary = await apiClient.getCollectionSummary(selectedDatabase.name, selectedCollection);
+      setCollectionSummary(summary);
+      console.log('🔄 Collection summary refreshed');
+    } catch (err) {
+      console.error('Failed to refresh collection summary:', err);
+    }
+  }, [selectedDatabase, selectedCollection]);
+
+  // 변경 알림 제거
+  const dismissChangeNotification = useCallback((index: number) => {
+    setChangeNotifications(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // 모든 변경 알림 제거
+  const dismissAllNotifications = useCallback(() => {
+    setChangeNotifications([]);
+  }, []);
+
   // 에러 상태 렌더링
   if (error) {
     return (
@@ -399,6 +542,72 @@ const CollectionExplorer: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* 실시간 기능 UI 컨트롤 */}
+        {selectedCollection && (
+          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              {/* 실시간 토글 버튼 */}
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleRealtimeToggle}
+                  disabled={loading.realtime}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    isRealtimeEnabled 
+                      ? 'bg-green-600' 
+                      : 'bg-gray-200'
+                  } ${loading.realtime ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isRealtimeEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className="text-sm font-medium text-gray-700">
+                  Real-time Updates
+                </span>
+                {loading.realtime && (
+                  <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+                )}
+              </div>
+
+              {/* 실시간 상태 표시기 */}
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  realtimeStatus === 'connected' ? 'bg-green-500 animate-pulse' :
+                  realtimeStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                  realtimeStatus === 'error' ? 'bg-red-500' :
+                  'bg-gray-300'
+                }`}></div>
+                <span className="text-xs text-gray-600 capitalize">
+                  {realtimeStatus === 'connected' ? 'Live' :
+                   realtimeStatus === 'connecting' ? 'Connecting...' :
+                   realtimeStatus === 'error' ? 'Error' :
+                   'Offline'}
+                </span>
+              </div>
+            </div>
+
+            {/* 변경 알림 배지 */}
+            {changeNotifications.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <button
+                    onClick={() => setChangeNotifications([])}
+                    className="flex items-center space-x-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-medium hover:bg-blue-100 transition-colors"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM4 5v14h10m-10-6h10" />
+                    </svg>
+                    <span>{changeNotifications.length} change{changeNotifications.length > 1 ? 's' : ''}</span>
+                  </button>
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 메인 컨텐츠 영역 - 동적 레이아웃 */}
@@ -573,6 +782,75 @@ const CollectionExplorer: React.FC = () => {
           })}
         </div>
       </div>
+
+      {/* 실시간 변경 알림 토스트 */}
+      {changeNotifications.slice(-3).map((notification, index) => (
+        <div
+          key={notification.collectionKey}
+          className={`fixed bottom-4 right-4 bg-white border-l-4 ${
+            notification.operationType === 'insert' ? 'border-green-500' :
+            notification.operationType === 'update' ? 'border-blue-500' :
+            notification.operationType === 'delete' ? 'border-red-500' :
+            'border-gray-500'
+          } rounded-lg shadow-lg p-4 max-w-sm transform transition-all duration-300 ease-in-out z-50`}
+          style={{
+            bottom: `${16 + index * 80}px`,
+            opacity: 1 - (index * 0.1)
+          }}
+        >
+          <div className="flex items-start space-x-3">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+              notification.operationType === 'insert' ? 'bg-green-100 text-green-600' :
+              notification.operationType === 'update' ? 'bg-blue-100 text-blue-600' :
+              notification.operationType === 'delete' ? 'bg-red-100 text-red-600' :
+              'bg-gray-100 text-gray-600'
+            }`}>
+              {notification.operationType === 'insert' ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              ) : notification.operationType === 'update' ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              ) : notification.operationType === 'delete' ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 capitalize">
+                Document {notification.operationType}d
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                {notification.collectionKey} • {new Date(notification.timestamp).toLocaleTimeString()}
+              </p>
+              {notification.documentKey && (
+                <p className="text-xs text-gray-400 mt-1 font-mono truncate">
+                  ID: {notification.documentKey._id}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setChangeNotifications(prev => 
+                  prev.filter(n => n.collectionKey !== notification.collectionKey)
+                );
+              }}
+              className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

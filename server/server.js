@@ -8,13 +8,19 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
+
+// 환경변수에서 허용된 Origin 목록 가져오기
+const allowedOrigins = process.env.WHITELIST 
+  ? process.env.WHITELIST.split(',').map(origin => origin.trim())
+  : [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://14.55.202.84:3000"
+  ];
+
 const io = new Server(server, {
   cors: {
-    origin: [
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "http://14.55.202.84:3000"
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST"]
   }
 });
@@ -54,13 +60,68 @@ async function getDatabase(dbName = 'test') {
   return databases.get(dbName);
 }
 
-// CORS 및 미들웨어 설정
+// IP 화이트리스트 및 CORS 설정
+const isIPWhitelistEnabled = process.env.ENABLE_IP_WHITELIST === 'true';
+const allowedIPs = process.env.IP_WHITELIST 
+  ? process.env.IP_WHITELIST.split(',').map(ip => ip.trim())
+  : ['127.0.0.1', '::1', 'localhost'];
+
+console.log('🔒 Security Configuration:');
+console.log(`   IP Whitelist Enabled: ${isIPWhitelistEnabled}`);
+console.log(`   Allowed IPs: ${allowedIPs.join(', ')}`);
+console.log(`   Allowed Origins: ${allowedOrigins.join(', ')}`);
+
+// IP 화이트리스트 미들웨어
+function ipWhitelistMiddleware(req, res, next) {
+  if (!isIPWhitelistEnabled) {
+    return next();
+  }
+
+  // 클라이언트 IP 추출 (프록시 고려)
+  const clientIP = req.ip || 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress ||
+                   (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
+                   req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+                   req.headers['x-real-ip'];
+
+  // IPv6 형태의 localhost (::ffff:127.0.0.1) 처리
+  const normalizedIP = clientIP?.replace(/^::ffff:/, '') || '';
+  
+  const checkString = `🔍 IP: ${normalizedIP} (Original: ${clientIP})`;
+
+  // IP 화이트리스트 검증
+  const isAllowed = allowedIPs.some(allowedIP => {
+    if (allowedIP === 'localhost' && (normalizedIP === '127.0.0.1' || normalizedIP === '::1')) {
+      return true;
+    }
+    return normalizedIP === allowedIP || clientIP === allowedIP;
+  });
+
+  if (!isAllowed) {
+    const timestamp = new Date().toISOString();
+    console.log(`${checkString}.. \n${timestamp} | 🚫 BLOCKED | ${req.method} ${req.path} | IP: ${normalizedIP} | User-Agent: ${req.headers['user-agent'] || 'Unknown'}`);
+    return res.status(403).json({
+      success: false,
+      error: 'Access denied: IP not whitelisted',
+      ip: normalizedIP,
+      timestamp: timestamp
+    });
+  }
+
+  console.log(`${checkString}.. ✅`);
+  next();
+}
+
+// 미들웨어 적용
+app.set('trust proxy', true); // 프록시 뒤에서 실제 IP 얻기
+
+// IP 화이트리스트 적용
+app.use(ipWhitelistMiddleware);
+
+// CORS 설정
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://14.55.202.84:3000"
-  ],  // 이후 "*"로 변경
+  origin: allowedOrigins,
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
@@ -69,11 +130,90 @@ app.use(express.urlencoded({ extended: true }));
 // 로깅 미들웨어
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
-  console.log(`${timestamp} | ${req.method} | ${req.path} | ${req.ip}`);
+  const clientIP = req.ip?.replace(/^::ffff:/, '') || '';
+  const securityStatus = isIPWhitelistEnabled ? 
+    (allowedIPs.some(ip => ip === 'localhost' && (clientIP === '127.0.0.1' || clientIP === '::1') || clientIP === ip) ? '🟢' : '🔴') : 
+    '⚪';
+  console.log(`${timestamp} | ${securityStatus} ${req.method} | ${req.path} | ${clientIP}`);
   next();
 });
 
 // ===================== REST API 엔드포인트 =====================
+
+// 보안 및 서버 상태 조회
+app.get('/api/security/status', (req, res) => {
+  const clientIP = req.ip?.replace(/^::ffff:/, '') || '';
+  
+  res.json({
+    success: true,
+    data: {
+      server: {
+        environment: process.env.NODE_ENV || 'development',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+      },
+      security: {
+        ipWhitelistEnabled: isIPWhitelistEnabled,
+        allowedIPs: allowedIPs,
+        allowedOrigins: allowedOrigins,
+        currentClientIP: clientIP,
+        isClientAllowed: !isIPWhitelistEnabled || allowedIPs.some(allowedIP => {
+          if (allowedIP === 'localhost' && (clientIP === '127.0.0.1' || clientIP === '::1')) {
+            return true;
+          }
+          return clientIP === allowedIP;
+        })
+      },
+      connections: {
+        totalClients: connectedClients.size,
+        activeChangeStreams: activeChangeStreams.size
+      }
+    }
+  });
+});
+
+// IP 화이트리스트 관리 (런타임에 IP 추가/제거)
+app.post('/api/security/whitelist', (req, res) => {
+  const { action, ip } = req.body; // action: 'add' | 'remove', ip: string
+  
+  if (!action || !ip) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing required fields: action and ip'
+    });
+  }
+  
+  if (!['add', 'remove'].includes(action)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid action. Use "add" or "remove"'
+    });
+  }
+  
+  const normalizedIP = ip.trim();
+  
+  if (action === 'add') {
+    if (!allowedIPs.includes(normalizedIP)) {
+      allowedIPs.push(normalizedIP);
+      console.log(`✅ IP added to whitelist: ${normalizedIP}`);
+    }
+  } else if (action === 'remove') {
+    const index = allowedIPs.indexOf(normalizedIP);
+    if (index > -1) {
+      allowedIPs.splice(index, 1);
+      console.log(`❌ IP removed from whitelist: ${normalizedIP}`);
+    }
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      action,
+      ip: normalizedIP,
+      currentWhitelist: allowedIPs
+    }
+  });
+});
 
 // 데이터베이스 목록 조회
 app.get('/api/databases', async (req, res) => {
@@ -666,6 +806,30 @@ function handleConnection(socket) {
   const timestamp = new Date().toISOString();
   const clientIp = socket.handshake.address;
   
+  // WebSocket 연결에 대한 IP 화이트리스트 검증
+  if (isIPWhitelistEnabled) {
+    const normalizedIP = clientIp?.replace(/^::ffff:/, '') || '';
+    
+    const isAllowed = allowedIPs.some(allowedIP => {
+      if (allowedIP === 'localhost' && (normalizedIP === '127.0.0.1' || normalizedIP === '::1')) {
+        return true;
+      }
+      return normalizedIP === allowedIP || clientIp === allowedIP;
+    });
+
+    if (!isAllowed) {
+      console.log(`🚫 WebSocket connection denied for IP: ${normalizedIP}`);
+      socket.emit('error', { 
+        error: 'Access denied: IP not whitelisted',
+        ip: normalizedIP 
+      });
+      socket.disconnect(true);
+      return;
+    }
+    
+    console.log(`✅ WebSocket connection allowed for IP: ${normalizedIP}`);
+  }
+  
   connectedClients.set(socket.id, {
     socket: socket,
     connectedAt: timestamp,
@@ -802,7 +966,7 @@ async function startServer() {
   try {
     await initMongoDB();
     
-    const PORT = process.env.PORT || 3001;
+    const PORT = process.env.API_PORT || 3001;
     const HOST = process.env.HOST || '14.55.202.84';
     
     server.listen(PORT, HOST, () => {
