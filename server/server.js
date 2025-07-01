@@ -663,7 +663,7 @@ async function startServer() {
     await initMongoDB();
     
     const PORT = process.env.PORT || 3001;
-    const HOST = process.env.HOST || 'localhost';
+    const HOST = process.env.HOST || '14.55.202.84';
     
     server.listen(PORT, HOST, () => {
       console.log(`🚀 Server running on http://${HOST}:${PORT}`);

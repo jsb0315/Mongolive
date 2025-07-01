@@ -41,7 +41,7 @@ interface MongoDocument {
 }
 
 // API 호출 함수들
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://14.55.202.84:3001';
 
 const apiClient = {
   async getDatabases(): Promise<Database[]> {
@@ -171,7 +171,7 @@ const CollectionExplorer: React.FC = () => {
 
       // API에서 문서 목록 로드
       const result = await apiClient.getDocuments(selectedDatabase.name, collectionName, {
-        limit: 50 // 처음에는 50개만 로드
+        limit: 10 // 처음에는 10개만 로드
       });
 
       setDocuments(result.documents);
@@ -180,7 +180,7 @@ const CollectionExplorer: React.FC = () => {
       setFieldStack([]);
       setCurrentDepth(0);
 
-      console.log(`Loaded ${result.documents.length} documents from ${selectedDatabase.name}/${collectionName}`);
+      console.log(result, `Loaded ${result.documents.length} documents from ${selectedDatabase.name}/${collectionName}`);
       
     } catch (err) {
       console.error('Failed to load documents:', err);

@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Database, mockDatabases, getDatabaseByName } from '../data/mockData';
+import { Database } from '../data/mockData';
+import { apiClient, convertAPIToUIDatabase } from '../utils/apiClient';
 
 interface DatabaseContextType {
   selectedDatabase: Database | null;
   databases: Database[];
   selectDatabase: (databaseName: string) => void;
   isLoading: boolean;
+  error: string | null;
+  refreshDatabases: () => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
@@ -24,22 +27,54 @@ interface DatabaseProviderProps {
 
 export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) => {
   const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null);
-  const [databases] = useState<Database[]>(mockDatabases);
+  const [databases, setDatabases] = useState<Database[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadDatabases = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const apiDatabases = await apiClient.getDatabases();
+      const uiDatabases = apiDatabases.map(convertAPIToUIDatabase);
+      
+      setDatabases(uiDatabases);
+      
+      // Auto-select first database if none selected and databases exist
+      if (uiDatabases.length > 0 && !selectedDatabase) {
+        setSelectedDatabase(uiDatabases[0]);
+      }
+      
+      // If currently selected database is no longer available, reset selection
+      if (selectedDatabase && !uiDatabases.find(db => db.name === selectedDatabase.name)) {
+        setSelectedDatabase(uiDatabases.length > 0 ? uiDatabases[0] : null);
+      }
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load databases';
+      setError(errorMessage);
+      console.error('Error loading databases:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshDatabases = async () => {
+    await loadDatabases();
+  };
 
   useEffect(() => {
-    // 초기 데이터베이스 설정 (첫 번째 DB 선택)
-    if (databases.length > 0 && !selectedDatabase) {
-      setSelectedDatabase(databases[0]);
-    }
-    setIsLoading(false);
-  }, [databases, selectedDatabase]);
+    loadDatabases();
+  }, []);
 
   const selectDatabase = (databaseName: string) => {
-    const database = getDatabaseByName(databaseName);
+    const database = databases.find(db => db.name === databaseName);
     if (database) {
       setSelectedDatabase(database);
       console.log(`Database switched to: ${databaseName}`);
+    } else {
+      console.warn(`Database not found: ${databaseName}`);
     }
   };
 
@@ -48,6 +83,8 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     databases,
     selectDatabase,
     isLoading,
+    error,
+    refreshDatabases,
   };
 
   return (

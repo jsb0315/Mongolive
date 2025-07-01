@@ -6,7 +6,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onLogout }) => {
-  const { selectedDatabase, databases, selectDatabase, isLoading } = useDatabaseContext();
+  const { selectedDatabase, databases, selectDatabase, isLoading, error, refreshDatabases } = useDatabaseContext();
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
@@ -22,19 +22,50 @@ const Header: React.FC<HeaderProps> = ({ onLogout }) => {
             <label htmlFor="database-select" className="text-sm font-medium text-gray-700">
               Database:
             </label>
-            <select
-              id="database-select"
-              value={selectedDatabase?.name || ''}
-              onChange={(e) => selectDatabase(e.target.value)}
-              disabled={isLoading}
-              className="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors duration-200 min-w-32"
-            >
-              {databases.map((db) => (
-                <option key={db.name} value={db.name}>
-                  {db.name}
-                </option>
-              ))}
-            </select>
+            
+            {error ? (
+              <div className="flex items-center space-x-2">
+                <div className="px-3 py-1 bg-red-100 text-red-800 rounded-lg text-sm">
+                  Error loading databases
+                </div>
+                <button
+                  onClick={refreshDatabases}
+                  className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                  title="Retry loading databases"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <>
+                <select
+                  id="database-select"
+                  value={selectedDatabase?.name || ''}
+                  onChange={(e) => selectDatabase(e.target.value)}
+                  disabled={isLoading || databases.length === 0}
+                  className="px-3 py-1 border border-gray-300 rounded-lg text-sm bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors duration-200 min-w-32 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <option>Loading...</option>
+                  ) : databases.length === 0 ? (
+                    <option>No databases available</option>
+                  ) : (
+                    databases.map((db) => (
+                      <option key={db.name} value={db.name}>
+                        {db.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                
+                {isLoading && (
+                  <div className="flex items-center space-x-2 text-sm text-gray-500">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-500"></div>
+                    <span>Loading...</span>
+                  </div>
+                )}
+              </>
+            )}
             
             {/* Database Info */}
             {selectedDatabase && (
@@ -58,8 +89,8 @@ const Header: React.FC<HeaderProps> = ({ onLogout }) => {
         
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span>Connected</span>
+            <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-500' : isLoading ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
+            <span>{error ? 'Connection Error' : isLoading ? 'Connecting...' : 'Connected'}</span>
           </div>
           
           {/* Current Database Indicator */}
