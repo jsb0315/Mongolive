@@ -120,37 +120,144 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
   }, [selectedDatabase, databases]);
 
   // 변경된 필드들로 네비게이션하는 함수
-  const navigateToChangedFields = useCallback(async (updatedFields: Record<string, any>) => {
+  const navigateToChangedFields = useCallback(async (updatedFields: Record<string, any>, documentToUse?: MongoDocument) => {
     const fieldPaths = Object.keys(updatedFields);
     if (fieldPaths.length === 0) return;
 
     console.log('🎯 Navigating to changed fields:', fieldPaths);
 
-    // 현재 선택된 문서가 없으면 네비게이션 불가
-    if (!selectedDocument) return;
+    // 사용할 문서 결정 (파라미터로 받은 문서 또는 현재 선택된 문서)
+    const currentDocument = documentToUse || selectedDocument;
+    if (!currentDocument) return;
+
+    // 필드 경로 분석을 위한 헬퍼 함수
+    const analyzeFieldPath = (path: string, document: MongoDocument) => {
+      const segments = path.split('.');
+      let currentValue = document;
+      let pathInfo = [];
+
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        
+        // 숫자인지 확인 (배열 인덱스)
+        const isArrayIndex = /^\d+$/.test(segment);
+        
+        if (isArrayIndex) {
+          // 이전 값이 배열이어야 함
+          if (Array.isArray(currentValue)) {
+            const index = parseInt(segment);
+            pathInfo.push({
+              segment: `[${segment}]`,
+              type: 'array-index',
+              parentType: 'array',
+              value: currentValue[index]
+            });
+            currentValue = currentValue[index];
+          } else {
+            console.warn(`Expected array but got ${typeof currentValue} at segment ${segment}`);
+            break;
+          }
+        } else {
+          // 객체 속성
+          if (currentValue && typeof currentValue === 'object' && !Array.isArray(currentValue)) {
+            pathInfo.push({
+              segment: segment,
+              type: 'object-property',
+              parentType: 'object',
+              value: currentValue[segment]
+            });
+            currentValue = currentValue[segment];
+          } else {
+            console.warn(`Expected object but got ${typeof currentValue} at segment ${segment}`);
+            break;
+          }
+        }
+      }
+
+      return pathInfo;
+    };
+
+    // 각 변경된 경로 분석
+    fieldPaths.forEach(changedPath => {
+      const pathInfo = analyzeFieldPath(changedPath, currentDocument);
+      console.log(`📊 Path analysis for '${changedPath}':`, pathInfo);
+      
+      // 예: 'dfjg.2.value'의 경우
+      // pathInfo[0]: { segment: 'dfjg', type: 'object-property', parentType: 'object', value: [...] }
+      // pathInfo[1]: { segment: '[2]', type: 'array-index', parentType: 'array', value: {...} }
+      // pathInfo[2]: { segment: 'value', type: 'object-property', parentType: 'object', value: "..." }
+    });
 
     // 현재 필드 경로 구성 (fieldStack 기반)
     const currentFieldPath = fieldStack.map(field => field.name).join('.');
     console.log('📍 Current field path:', currentFieldPath);
 
-    // 1. 현재 경로로 다시 네비게이션 (문서는 이미 최신 상태)
-    await navigateToCurrentPath(currentFieldPath);
+    // 1. 현재 경로로 다시 네비게이션 (최신 문서 사용)
+    await navigateToCurrentPath(currentFieldPath, currentDocument);
 
     // 2. 변경된 경로들과 현재 경로의 공통 상위 경로를 찾아 하이라이트
     const fieldsToHighlight = new Set<string>();
     
     for (const changedPath of fieldPaths) {
-      const commonParentPath = findCommonParentPath(currentFieldPath, changedPath);
-      if (commonParentPath) {
+      console.log('🔍 Processing changed path:', changedPath, 'Current path:', currentFieldPath);
+      
+      // 경로 분석을 통해 실제 필드 구조 파악
+      const pathInfo = analyzeFieldPath(changedPath, currentDocument);
+      
+      // MongoDB dot notation을 UI 경로로 변환
+      // 예: 'dfjg.2.value' -> 'dfjg.[2].value' (배열 인덱스를 명시적으로 표현)
+      const uiPath = pathInfo.map(info => info.segment).join('.');
+      console.log(`🔄 Converted '${changedPath}' to UI path: '${uiPath}'`);
+      
+      // 현재 경로와 변경된 경로 간의 관계 분석
+      const currentSegments = currentFieldPath.split('.');
+      const changedSegments = uiPath.split('.');
+      
+      // 빈 경로 처리
+      if (currentFieldPath === '' || currentFieldPath === null) {
+        // 루트 레벨에서는 변경된 경로의 첫 번째 세그먼트를 하이라이트
+        if (changedSegments.length > 0) {
+          fieldsToHighlight.add(changedSegments[0]);
+          console.log('✅ Root level highlight:', changedSegments[0]);
+        }
+        continue;
+      }
+      
+      // 공통 상위 경로 찾기
+      const commonParentPath = findCommonParentPath(currentFieldPath, uiPath);
+      
+      if (commonParentPath !== null) {
         // 공통 상위 경로에서 변경된 필드의 다음 세그먼트를 하이라이트
-        const changedPathSegments = changedPath.split('.');
-        const commonPathSegments = commonParentPath.split('.');
+        const commonPathSegments = commonParentPath === '' ? [] : commonParentPath.split('.');
         
-        if (changedPathSegments.length > commonPathSegments.length) {
-          const nextSegmentInChangedPath = changedPathSegments[commonPathSegments.length];
+        if (changedSegments.length > commonPathSegments.length) {
+          const nextSegmentInChangedPath = changedSegments[commonPathSegments.length];
           fieldsToHighlight.add(nextSegmentInChangedPath);
           console.log('✅ Will highlight field:', nextSegmentInChangedPath, 'from changed path:', changedPath);
         }
+      } else {
+        // 공통 경로가 없는 경우, 변경된 경로의 첫 번째 세그먼트를 하이라이트
+        if (changedSegments.length > 0) {
+          fieldsToHighlight.add(changedSegments[0]);
+          console.log('✅ No common path, highlighting root field:', changedSegments[0]);
+        }
+      }
+      
+      // 추가: 변경된 경로가 현재 경로의 하위 경로인 경우
+      if (uiPath.startsWith(currentFieldPath)) {
+        const remainingPath = uiPath.substring(currentFieldPath.length);
+        if (remainingPath.startsWith('.')) {
+          const nextSegment = remainingPath.substring(1).split('.')[0];
+          if (nextSegment) {
+            fieldsToHighlight.add(nextSegment);
+            console.log('✅ Highlighting descendant field:', nextSegment);
+          }
+        }
+      }
+      
+      // 추가: 현재 경로가 변경된 경로의 하위 경로인 경우
+      if (currentFieldPath.startsWith(uiPath)) {
+        console.log('✅ Current path is descendant of changed path');
       }
     }
 
@@ -166,7 +273,7 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
       console.log('✅ Navigation and highlighting completed. Highlighted fields:', Array.from(fieldsToHighlight));
     }
 
-  }, [selectedDocument, fieldStack]);
+  }, [fieldStack]);
 
   // 공통 상위 경로를 찾는 함수
   const findCommonParentPath = useCallback((currentPath: string, changedPath: string): string | null => {
@@ -193,13 +300,15 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
   }, []);
 
   // 특정 경로로 네비게이션하는 함수
-  const navigateToCurrentPath = useCallback(async (targetPath: string) => {
-    if (!selectedDocument || !targetPath) return;
+  const navigateToCurrentPath = useCallback(async (targetPath: string, documentToUse?: MongoDocument) => {
+    // 사용할 문서 결정
+    const currentDocument = documentToUse || selectedDocument;
+    if (!currentDocument || !targetPath) return;
 
     console.log('🧭 Navigating to path:', targetPath);
 
     const pathSegments = targetPath.split('.');
-    let currentValue = selectedDocument;
+    let currentValue = currentDocument;
     let newFieldStack: FieldPath[] = [];
     let newSelectedFields: (string | null)[] = [];
 
@@ -263,7 +372,7 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
     } catch (error) {
       console.error('Failed to navigate to path:', targetPath, error);
     }
-  }, [selectedDocument]);
+  }, []);
 
   // 변경 알림 처리 함수
   const handleChangeNotification = useCallback(async (notification: ChangeStreamEvent) => {
@@ -279,6 +388,8 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
       }
 
       // 2. 현재 선택된 문서가 변경된 경우 새로고침
+      let documentWasUpdated = false;
+      let updatedDocument = null;
       if (selectedDocumentId && notification.documentKey?._id) {
         const notificationDocId = notification.documentKey._id.toString();
         if (selectedDocumentId === notificationDocId) {
@@ -291,14 +402,23 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
             setFieldStack([]);
             setCurrentDepth(0);
           } else {
-            // 문서가 업데이트된 경우 다시 로드
-            await handleDocumentSelect(selectedDocumentId);
+            // 문서가 업데이트된 경우 다시 로드하고 최신 문서 저장
+            if (selectedDatabase && selectedCollection) {
+              const document = await apiClient.getDocument(selectedDatabase.name, selectedCollection, selectedDocumentId);
+              setSelectedDocument(document);
+              setSelectedFields([]);
+              setFieldStack([]);
+              setCurrentDepth(0);
+              documentWasUpdated = true;
+              updatedDocument = document;
+              console.log('✅ Document updated with latest data');
+            }
           }
         }
       }
 
       // 3. 변경된 필드 경로로 네비게이션 (update 작업의 경우)
-      if (notification.operationType === 'update' && notification.updateDescription?.updatedFields) {
+      if (notification.operationType === 'update' && notification.updateDescription?.updatedFields && documentWasUpdated && updatedDocument) {
         const updatedFieldPaths = Object.keys(notification.updateDescription.updatedFields);
         setRecentlyChangedPaths(updatedFieldPaths);
         
@@ -307,7 +427,8 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
           setRecentlyChangedPaths([]);
         }, 3000);
         
-        await navigateToChangedFields(notification.updateDescription.updatedFields);
+        // 최신 문서를 사용하여 네비게이션 실행
+        await navigateToChangedFields(notification.updateDescription.updatedFields, updatedDocument);
       }
 
       // 4. 새로 삽입된 문서로 네비게이션 (insert 작업의 경우)
@@ -402,7 +523,7 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
   const handleFieldSelect = (selectedField: FieldPath, parentPath: string[] = [], depth: number) => {
     const { name: fieldName, value: fieldValue, path: fieldPath, type: fieldType, referencedDocuments: refDocs } = selectedField;
 
-    // console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
+    console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
 
     /**
      * Ref Field임 
@@ -632,7 +753,7 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
                 {isProcessingNotification && (
                   <div className="ml-2 flex items-center space-x-1">
                     <div className="w-3 h-3 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
-                    <span className="text-xs text-blue-600">Processing change...</span>
+                    <span className="text-xs text-blue-600 shrink-0">Processing change...</span>
                   </div>
                 )}
               </div>
