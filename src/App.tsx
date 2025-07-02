@@ -10,6 +10,7 @@ import ClientMonitoring from './components/features/ClientMonitoring';
 import PerformanceMetrics from './components/features/PerformanceMetrics';
 import AuthSystem from './components/features/AuthSystem';
 import { DatabaseProvider } from './contexts/DatabaseContext';
+import { ChangeStreamProvider } from './contexts/ChangeStreamContext';
 import PlayGround from './components/features/PlayGround';
 
 import JsonExplorer from './test';
@@ -93,36 +94,6 @@ function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('collections');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<string>('admin');
-
-  useEffect(() => {
-    // const handleConnect = (): void => {
-    //   console.log('Connected to server');
-  
-    //   // 세션 스토리지에서 데이터 가져오기
-    //   const savedQuery: string = sessionStorage.getItem('query') || ''; 
-    //   const savedProjection: string = sessionStorage.getItem('projection') || '';
-  
-    //   setQuery(savedQuery);
-    //   setProjection(savedProjection);
-  
-    //   try {
-    //     socket.emit('searchUsers', { query: savedQuery, projection: savedProjection });
-    //     console.log('------------------');
-    //   } catch (error) {
-    //     console.error('Invalid data in sessionStorage:', error);
-    //   }
-    // };
-  
-    // socket.on('connect', handleConnect);
-    // socket.on('updateUsers', handleUpdateUsers);
-    // socket.on('connect_error', handleError);
-  
-    // return () => {
-    //   socket.off('connect', handleConnect);
-    //   socket.off('updateUsers', handleUpdateUsers);
-    //   socket.off('connect_error', handleError);
-    // };
-  }, []);
 
   const handleUpdateUsers = (updatedUsers: UpdateUsersResponse): void => {
     updatedUsers.success && setUsers(updatedUsers.data || []);
@@ -209,21 +180,26 @@ function App() {
 
   return (
     <DatabaseProvider>
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header 
-          onLogout={() => {
-            setIsAuthenticated(false);
-            setCurrentUser('admin'); // 로그아웃 시 기본값으로 리셋
-          }} 
-          currentUser={currentUser} 
-        />
-        <main className="flex-1 overflow-auto p-6">
-          {renderContent()}
-        </main>
-      </div>
-    </div>
+      <ChangeStreamProvider>
+        <div className="flex h-screen bg-gray-50">
+          <Sidebar 
+            activeTab={activeTab} 
+            onTabChange={setActiveTab}
+          />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header 
+              onLogout={() => {
+                setIsAuthenticated(false);
+                setCurrentUser('admin'); // 로그아웃 시 기본값으로 리셋
+              }} 
+              currentUser={currentUser} 
+            />
+            <main className="flex-1 overflow-auto p-6">
+              {renderContent()}
+            </main>
+          </div>
+        </div>
+      </ChangeStreamProvider>
     </DatabaseProvider>
   );
 }

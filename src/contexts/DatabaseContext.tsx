@@ -8,6 +8,9 @@ interface DatabaseContextType {
   selectDatabase: (databaseName: string) => void;
   isLoading: boolean;
   error: string | null;
+  isConnected: boolean;
+  currentCollection: string | null;
+  setCurrentCollection: (collection: string | null) => void;
   refreshDatabases: () => Promise<void>;
 }
 
@@ -30,6 +33,10 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
   const [databases, setDatabases] = useState<Database[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentCollection, setCurrentCollection] = useState<string | null>(null);
+
+  // Database is considered connected if we have a selected database and no error
+  const isConnected = selectedDatabase !== null && error === null;
 
   const loadDatabases = async () => {
     try {
@@ -84,6 +91,9 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     selectDatabase,
     isLoading,
     error,
+    isConnected,
+    currentCollection,
+    setCurrentCollection,
     refreshDatabases,
   };
 

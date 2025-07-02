@@ -19,6 +19,8 @@ interface FieldSectionProps {
   colSpan?: number;
   // 새로 추가된 prop: 렌더링 여부를 결정
   shouldRenderFields?: boolean;
+  // 하이라이트할 필드들
+  highlightedFields?: Set<string>;
   onFieldSelect: (selectedField: FieldPath, parentPath: string[], depth: number) => void;
   onBackNavigation: (targetDepth: number) => void;
 }
@@ -39,6 +41,7 @@ const FieldSection: React.FC<FieldSectionProps> = ({
   parentFieldPath,
   colSpan = 1,
   shouldRenderFields = true, // 기본값은 true
+  highlightedFields = new Set(),
   onFieldSelect,
   onBackNavigation
 }) => {
@@ -108,6 +111,7 @@ const FieldSection: React.FC<FieldSectionProps> = ({
                 selectedFieldName={selectedFieldAtDepth}
                 depth={depth}
                 currentDepth={currentDepth}
+                isHighlighted={highlightedFields.has(field.name)}
                 onFieldSelect={onFieldSelect}
                 parentPath={depth === 0 ? [] : parentFieldPath}
               />

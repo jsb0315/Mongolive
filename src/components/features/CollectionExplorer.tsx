@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useDatabaseContext } from '../../contexts/DatabaseContext';
+import { useChangeStream } from '../../contexts/ChangeStreamContext';
 import { FieldPath } from '../../types/collectionTypes';
 import FieldSection from './FieldSection';
 import {
@@ -25,9 +26,19 @@ interface MongoDocument {
   _id: any;
   [key: string]: any;
 }
+interface CollectionExplorerProps {
+  onCollectionChange?: (collection: string | null) => void;
+  onDatabaseConnectionChange?: (isConnected: boolean) => void;
+  isRealtimeEnabled?: boolean; // 실시간 기능 활성화 여부
+}
 
-const CollectionExplorer: React.FC = () => {
-  const { selectedDatabase } = useDatabaseContext();
+const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
+  onCollectionChange,
+  onDatabaseConnectionChange,
+  isRealtimeEnabled = false
+}) => {
+  const { selectedDatabase, setCurrentCollection } = useDatabaseContext();
+  const { subscribeToCollection, unsubscribeFromCollection, changeNotifications } = useChangeStream();
   
   // State 관리
   const [databases, setDatabases] = useState<APIDatabase[]>([]);
@@ -40,12 +51,15 @@ const CollectionExplorer: React.FC = () => {
   const [fieldStack, setFieldStack] = useState<FieldPath[]>([]);
   const [currentDepth, setCurrentDepth] = useState<number>(0);
   
-  // 실시간 기능 상태
-  const [isRealtimeEnabled, setIsRealtimeEnabled] = useState<boolean>(false);
-  const [realtimeStatus, setRealtimeStatus] = useState<string>('disconnected');
+  // 실시간 기능 상태 - Context에서 관리되므로 로컬 상태 제거
   const [lastChangeEvent, setLastChangeEvent] = useState<ChangeStreamEvent | null>(null);
-  const [changeNotifications, setChangeNotifications] = useState<ChangeStreamEvent[]>([]);
   const maxNotifications = 10; // 최대 알림 개수
+  
+  // 변경 알림 처리를 위한 ref
+  const lastProcessedNotificationRef = useRef<string | null>(null);
+  const [isProcessingNotification, setIsProcessingNotification] = useState<boolean>(false);
+  const [recentlyChangedPaths, setRecentlyChangedPaths] = useState<string[]>([]);
+  const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   
   // 실시간 구독 관리
   const activeSubscriptionRef = useRef<string | null>(null);
@@ -92,6 +106,7 @@ const CollectionExplorer: React.FC = () => {
       
       // 데이터베이스가 변경되면 선택 상태 초기화
       setSelectedCollection(null);
+      setCurrentCollection(null); // DatabaseContext에도 알림
       setCollectionSummary(null);
       setSelectedDocumentId(null);
       setSelectedDocument(null);
@@ -100,18 +115,241 @@ const CollectionExplorer: React.FC = () => {
       setCurrentDepth(0);
     } else {
       setCollections([]);
+      setCurrentCollection(null); // DatabaseContext에도 알림
     }
   }, [selectedDatabase, databases]);
+
+  // 변경된 필드들로 네비게이션하는 함수
+  const navigateToChangedFields = useCallback(async (updatedFields: Record<string, any>) => {
+    const fieldPaths = Object.keys(updatedFields);
+    if (fieldPaths.length === 0) return;
+
+    console.log('🎯 Navigating to changed fields:', fieldPaths);
+
+    // 현재 선택된 문서가 없으면 네비게이션 불가
+    if (!selectedDocument) return;
+
+    // 현재 필드 경로 구성 (fieldStack 기반)
+    const currentFieldPath = fieldStack.map(field => field.name).join('.');
+    console.log('📍 Current field path:', currentFieldPath);
+
+    // 1. 현재 경로로 다시 네비게이션 (문서는 이미 최신 상태)
+    await navigateToCurrentPath(currentFieldPath);
+
+    // 2. 변경된 경로들과 현재 경로의 공통 상위 경로를 찾아 하이라이트
+    const fieldsToHighlight = new Set<string>();
+    
+    for (const changedPath of fieldPaths) {
+      const commonParentPath = findCommonParentPath(currentFieldPath, changedPath);
+      if (commonParentPath) {
+        // 공통 상위 경로에서 변경된 필드의 다음 세그먼트를 하이라이트
+        const changedPathSegments = changedPath.split('.');
+        const commonPathSegments = commonParentPath.split('.');
+        
+        if (changedPathSegments.length > commonPathSegments.length) {
+          const nextSegmentInChangedPath = changedPathSegments[commonPathSegments.length];
+          fieldsToHighlight.add(nextSegmentInChangedPath);
+          console.log('✅ Will highlight field:', nextSegmentInChangedPath, 'from changed path:', changedPath);
+        }
+      }
+    }
+
+    // 하이라이트 필드 설정
+    if (fieldsToHighlight.size > 0) {
+      setHighlightedFields(fieldsToHighlight);
+      
+      // 2초 후 하이라이트 제거
+      setTimeout(() => {
+        setHighlightedFields(new Set());
+      }, 2000);
+
+      console.log('✅ Navigation and highlighting completed. Highlighted fields:', Array.from(fieldsToHighlight));
+    }
+
+  }, [selectedDocument, fieldStack]);
+
+  // 공통 상위 경로를 찾는 함수
+  const findCommonParentPath = useCallback((currentPath: string, changedPath: string): string | null => {
+    const currentSegments = currentPath.split('.');
+    const changedSegments = changedPath.split('.');
+    
+    // 빈 경로 처리
+    if (currentPath === '' && changedPath === '') return '';
+    if (currentPath === '') return null;
+    if (changedPath === '') return null;
+    
+    const commonSegments = [];
+    const minLength = Math.min(currentSegments.length, changedSegments.length);
+    
+    for (let i = 0; i < minLength; i++) {
+      if (currentSegments[i] === changedSegments[i]) {
+        commonSegments.push(currentSegments[i]);
+      } else {
+        break;
+      }
+    }
+    
+    return commonSegments.length > 0 ? commonSegments.join('.') : null;
+  }, []);
+
+  // 특정 경로로 네비게이션하는 함수
+  const navigateToCurrentPath = useCallback(async (targetPath: string) => {
+    if (!selectedDocument || !targetPath) return;
+
+    console.log('🧭 Navigating to path:', targetPath);
+
+    const pathSegments = targetPath.split('.');
+    let currentValue = selectedDocument;
+    let newFieldStack: FieldPath[] = [];
+    let newSelectedFields: (string | null)[] = [];
+
+    try {
+      for (let i = 0; i < pathSegments.length; i++) {
+        const segment = pathSegments[i];
+        
+        // 배열 인덱스인지 확인 (예: [0], [1] 등)
+        const arrayIndexMatch = segment.match(/^\[(\d+)\]$/);
+        if (arrayIndexMatch) {
+          const index = parseInt(arrayIndexMatch[1]);
+          if (Array.isArray(currentValue) && index < currentValue.length) {
+            currentValue = currentValue[index];
+            newSelectedFields[i] = `[${index}]`;
+          } else {
+            console.warn('Invalid array index:', segment);
+            break;
+          }
+        } else {
+          // 일반 객체 속성
+          if (currentValue && typeof currentValue === 'object' && segment in currentValue) {
+            const fieldValue = currentValue[segment];
+            const fieldType = getMongoType(fieldValue);
+            
+            newFieldStack.push({
+              name: segment,
+              value: fieldValue,
+              path: pathSegments.slice(0, i + 1),
+              type: fieldType,
+              referencedDocuments: null,
+              referencedCollection: null,
+              referencedDatabase: null,
+              referencedId: isObjectId(fieldValue) ? fieldValue : null,
+            });
+
+            newSelectedFields[i] = segment;
+            currentValue = fieldValue;
+          } else {
+            console.warn('Invalid path segment:', segment, 'in object:', currentValue);
+            break;
+          }
+        }
+      }
+
+      // 네비게이션 상태 업데이트
+      if (newFieldStack.length > 0) {
+        setFieldStack(newFieldStack);
+        setSelectedFields(newSelectedFields);
+        setCurrentDepth(newFieldStack.length);
+        
+        console.log('✅ Navigation to path completed:', targetPath);
+        console.log('📍 New field stack:', newFieldStack);
+      } else if (pathSegments.length === 1 && pathSegments[0] === '') {
+        // 루트 경로로 리셋
+        setFieldStack([]);
+        setSelectedFields([]);
+        setCurrentDepth(0);
+        console.log('✅ Reset to root path');
+      }
+
+    } catch (error) {
+      console.error('Failed to navigate to path:', targetPath, error);
+    }
+  }, [selectedDocument]);
+
+  // 변경 알림 처리 함수
+  const handleChangeNotification = useCallback(async (notification: ChangeStreamEvent) => {
+    console.log('🔄 Processing change notification:', notification);
+    setIsProcessingNotification(true);
+    
+    try {
+      // 1. 컬렉션 요약 새로고침
+      if (selectedDatabase && selectedCollection) {
+        console.log('🔄 Refreshing collection summary...');
+        const summary = await apiClient.getCollectionSummary(selectedDatabase.name, selectedCollection);
+        setCollectionSummary(summary);
+      }
+
+      // 2. 현재 선택된 문서가 변경된 경우 새로고침
+      if (selectedDocumentId && notification.documentKey?._id) {
+        const notificationDocId = notification.documentKey._id.toString();
+        if (selectedDocumentId === notificationDocId) {
+          console.log('🔄 Current document affected, refreshing...');
+          if (notification.operationType === 'delete') {
+            // 문서가 삭제된 경우 선택 해제
+            setSelectedDocumentId(null);
+            setSelectedDocument(null);
+            setSelectedFields([]);
+            setFieldStack([]);
+            setCurrentDepth(0);
+          } else {
+            // 문서가 업데이트된 경우 다시 로드
+            await handleDocumentSelect(selectedDocumentId);
+          }
+        }
+      }
+
+      // 3. 변경된 필드 경로로 네비게이션 (update 작업의 경우)
+      if (notification.operationType === 'update' && notification.updateDescription?.updatedFields) {
+        const updatedFieldPaths = Object.keys(notification.updateDescription.updatedFields);
+        setRecentlyChangedPaths(updatedFieldPaths);
+        
+        // 3초 후 하이라이트 제거
+        setTimeout(() => {
+          setRecentlyChangedPaths([]);
+        }, 3000);
+        
+        await navigateToChangedFields(notification.updateDescription.updatedFields);
+      }
+
+      // 4. 새로 삽입된 문서로 네비게이션 (insert 작업의 경우)
+      if (notification.operationType === 'insert' && notification.fullDocument?._id) {
+        const newDocId = notification.fullDocument._id.toString();
+        console.log('🔄 New document inserted, navigating to:', newDocId);
+        setTimeout(() => {
+          handleDocumentSelect(newDocId);
+        }, 500); // 약간의 지연을 두어 UI 업데이트 완료 후 실행
+      }
+
+    } catch (error) {
+      console.error('Failed to handle change notification:', error);
+    } finally {
+      setIsProcessingNotification(false);
+    }
+  }, [selectedDatabase, selectedCollection, selectedDocumentId, navigateToChangedFields]);
+
+  // 변경 알림 처리 effect
+  useEffect(() => {
+    if (changeNotifications.length > 0 && selectedDatabase && selectedCollection) {
+      const latestNotification = changeNotifications[0];
+      const notificationId = `${latestNotification.timestamp}-${latestNotification.operationType}`;
+      
+      // 이미 처리된 알림인지 확인
+      if (lastProcessedNotificationRef.current !== notificationId) {
+        lastProcessedNotificationRef.current = notificationId;
+        handleChangeNotification(latestNotification);
+      }
+    }
+  }, [changeNotifications, selectedDatabase, selectedCollection, handleChangeNotification]);
 
   const handleCollectionSelect = async (collectionName: string) => {
     if (!selectedDatabase) return;
 
     try {
-      console.log(`\n==================================== \nSelecting collection: ${collectionName} from database: ${selectedDatabase.name}`);
+      // console.log(`\n==================================== \nSelecting collection: ${collectionName} from database: ${selectedDatabase.name}`);
       
       setLoading(prev => ({ ...prev, documents: true }));
       setError(null);
       setSelectedCollection(collectionName);
+      setCurrentCollection(collectionName); // DatabaseContext에 알림
 
       // summary API에서 컬렉션 요약 정보 로드
       const summary = await apiClient.getCollectionSummary(selectedDatabase.name, collectionName);
@@ -122,7 +360,7 @@ const CollectionExplorer: React.FC = () => {
       setFieldStack([]);
       setCurrentDepth(0);
 
-      console.log(summary, `Loaded collection summary for ${selectedDatabase.name}/${collectionName}`);
+      // console.log(summary, `Loaded collection summary for ${selectedDatabase.name}/${collectionName}`);
       
     } catch (err) {
       console.error('Failed to load collection summary:', err);
@@ -137,7 +375,7 @@ const CollectionExplorer: React.FC = () => {
     if (!selectedDatabase || !selectedCollection) return;
 
     try {
-      console.log(`\n==================================== \nSelecting document: ${docId}`);
+      // console.log(`\n==================================== \nSelecting document: ${docId}`);
       
       setLoading(prev => ({ ...prev, document: true }));
       setError(null);
@@ -150,7 +388,7 @@ const CollectionExplorer: React.FC = () => {
       setFieldStack([]);
       setCurrentDepth(0);
 
-      console.log(document, `Loaded full document for ${selectedDatabase.name}/${selectedCollection}/${docId}`);
+      // console.log(document, `Loaded full document for ${selectedDatabase.name}/${selectedCollection}/${docId}`);
       
     } catch (err) {
       console.error('Failed to load document:', err);
@@ -164,7 +402,7 @@ const CollectionExplorer: React.FC = () => {
   const handleFieldSelect = (selectedField: FieldPath, parentPath: string[] = [], depth: number) => {
     const { name: fieldName, value: fieldValue, path: fieldPath, type: fieldType, referencedDocuments: refDocs } = selectedField;
 
-    console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
+    // console.log(`\n====================================\nField clicked: `, selectedField, `\nfieldPath:`, fieldPath.join('.'), '\ncanTraverse', canTraverse(fieldValue, fieldType), fieldName, selectedFields[depth]);
 
     /**
      * Ref Field임 
@@ -207,15 +445,15 @@ const CollectionExplorer: React.FC = () => {
       };
 
       if (depth === currentDepth) {
-        console.log(`Adding new field to stack at depth ${depth} \n`, newField)
+        // console.log(`Adding new field to stack at depth ${depth} \n`, newField)
         setFieldStack(prev => [...prev, newField]);
         setCurrentDepth(prev => prev + 1);
       } else {
-        console.log(`Updating field stack at depth ${depth} from ${currentDepth} \n`, newField);
+        // console.log(`Updating field stack at depth ${depth} from ${currentDepth} \n`, newField);
         handleBackNavigation(currentDepth + (depth - currentDepth + 1));
         setFieldStack(prev => [...prev.slice(0, -1), newField]);
       }
-      console.log(`Field stack updated:`, fieldValue, fieldStack);
+      // console.log(`Field stack updated:`, fieldValue, fieldStack);
     }
   };
 
@@ -238,7 +476,7 @@ const CollectionExplorer: React.FC = () => {
     try {
       // summary 기반 탐색에서는 참조 해결을 단순화
       // 실제 참조 해결은 사용자가 특정 document를 선택할 때 getDocument API로 처리
-      console.log(`Reference resolution for ${objectId} in ${currentDb} - simplified for summary mode`);
+      // console.log(`Reference resolution for ${objectId} in ${currentDb} - simplified for summary mode`);
       return { document: null, collection: null, database: null };
     } catch (error) {
       console.error('Failed to resolve reference:', error);
@@ -264,7 +502,7 @@ const CollectionExplorer: React.FC = () => {
           // ObjectId 참조는 비동기로 처리하므로 초기에는 null로 설정
           // 실제 참조 해결은 사용자가 필드를 클릭할 때 수행
           if (isObjectId(value)) {
-            console.log(`====>\n Depth 0 ObjectId detected: ${key} = ${value}`);
+            // console.log(`====>\n Depth 0 ObjectId detected: ${key} = ${value}`);
             // TODO: 비동기 참조 해결을 위한 로직 추가 필요
           }
 
@@ -289,7 +527,7 @@ const CollectionExplorer: React.FC = () => {
       const refDocs = parentField.referencedDocuments;
       const targetValue = isRefField ? parentField.referencedDocuments![0] : parentField.value;
       
-      console.log('\n----------------------\ngetFieldsAtDepth called for depth:', depth, '\nparentField:', parentField, '\ntargetValue:', targetValue, '\nisRefField:', isRefField, '\ncanTraverse:', canTraverse(targetValue, parentType));
+      // console.log('\n----------------------\ngetFieldsAtDepth called for depth:', depth, '\nparentField:', parentField, '\ntargetValue:', targetValue, '\nisRefField:', isRefField, '\ncanTraverse:', canTraverse(targetValue, parentType));
 
       if (!canTraverse(targetValue, parentType)) return [];
 
@@ -335,127 +573,6 @@ const CollectionExplorer: React.FC = () => {
     });
     return items;
   };
-
-  // 실시간 기능 활성화/비활성화 핸들러
-  const handleRealtimeToggle = useCallback(async () => {
-    if (!selectedDatabase || !selectedCollection) return;
-
-    if (isRealtimeEnabled) {
-      // 실시간 비활성화
-      if (activeSubscriptionRef.current) {
-        const [dbName, collectionName] = activeSubscriptionRef.current.split('.');
-        apiClient.unsubscribeFromCollection(dbName, collectionName);
-        activeSubscriptionRef.current = null;
-      }
-      setIsRealtimeEnabled(false);
-      setRealtimeStatus('disconnected');
-      console.log('🔴 Realtime disabled for collection');
-    } else {
-      // 실시간 활성화
-      try {
-        setLoading(prev => ({ ...prev, realtime: true }));
-        setRealtimeStatus('connecting');
-
-        const subscriptionOptions: RealtimeSubscriptionOptions = {
-          dbName: selectedDatabase.name,
-          collectionName: selectedCollection,
-          query: '{}',
-          limit: 1000 // 실시간 감지를 위해 더 많은 문서 추적
-        };
-
-        const eventHandlers: RealtimeEventHandlers = {
-          onData: (data) => {
-            console.log('📡 Initial realtime data received:', data);
-            if (data.type === 'initial' && data.data) {
-              // 초기 데이터로 컬렉션 요약 업데이트 (필요시)
-              console.log('Initial collection data loaded via realtime');
-            }
-          },
-          onChange: (change: ChangeStreamEvent) => {
-            console.log('🔄 Change event received:', change);
-            setLastChangeEvent(change);
-            
-            // 변경 알림 추가
-            setChangeNotifications(prev => {
-              const newNotifications = [change, ...prev].slice(0, maxNotifications);
-              return newNotifications;
-            });
-
-            // 현재 선택된 문서가 변경된 경우 자동 새로고침
-            if (selectedDocumentId && APIClient.changeAffectsDocument(change, selectedDocumentId)) {
-              console.log('🔄 Current document affected, refreshing...');
-              handleDocumentSelect(selectedDocumentId);
-            }
-
-            // 컬렉션 요약 새로고침 (문서 추가/삭제의 경우)
-            if (APIClient.isInsert(change) || APIClient.isDelete(change)) {
-              console.log('🔄 Collection affected, refreshing summary...');
-              refreshCollectionSummary();
-            }
-          },
-          onError: (error: Error) => {
-            console.error('❌ Realtime error:', error);
-            setError(`Realtime error: ${error.message}`);
-            setRealtimeStatus('error');
-            
-            // 자동 재연결 시도
-            if (retryTimeoutRef.current) {
-              clearTimeout(retryTimeoutRef.current);
-            }
-            retryTimeoutRef.current = setTimeout(() => {
-              console.log('🔄 Attempting to reconnect realtime...');
-              handleRealtimeToggle();
-            }, 5000);
-          },
-          onSubscribed: (info) => {
-            console.log('✅ Realtime subscribed:', info);
-            setRealtimeStatus('connected');
-            setError(null);
-          },
-          onUnsubscribed: (info) => {
-            console.log('🔴 Realtime unsubscribed:', info);
-            setRealtimeStatus('disconnected');
-          }
-        };
-
-        const subscriptionKey = apiClient.subscribeToCollection(subscriptionOptions, eventHandlers);
-        activeSubscriptionRef.current = subscriptionKey;
-        setIsRealtimeEnabled(true);
-        
-        console.log('🟢 Realtime enabled for collection:', subscriptionKey);
-        
-      } catch (err) {
-        console.error('Failed to enable realtime:', err);
-        setError(err instanceof Error ? err.message : 'Failed to enable realtime');
-        setRealtimeStatus('error');
-      } finally {
-        setLoading(prev => ({ ...prev, realtime: false }));
-      }
-    }
-  }, [selectedDatabase, selectedCollection, selectedDocumentId, isRealtimeEnabled]);
-
-  // 컬렉션 요약 새로고침
-  const refreshCollectionSummary = useCallback(async () => {
-    if (!selectedDatabase || !selectedCollection) return;
-    
-    try {
-      const summary = await apiClient.getCollectionSummary(selectedDatabase.name, selectedCollection);
-      setCollectionSummary(summary);
-      console.log('🔄 Collection summary refreshed');
-    } catch (err) {
-      console.error('Failed to refresh collection summary:', err);
-    }
-  }, [selectedDatabase, selectedCollection]);
-
-  // 변경 알림 제거
-  const dismissChangeNotification = useCallback((index: number) => {
-    setChangeNotifications(prev => prev.filter((_, i) => i !== index));
-  }, []);
-
-  // 모든 변경 알림 제거
-  const dismissAllNotifications = useCallback(() => {
-    setChangeNotifications([]);
-  }, []);
 
   // 에러 상태 렌더링
   if (error) {
@@ -512,6 +629,12 @@ const CollectionExplorer: React.FC = () => {
                   {selectedDatabase ? selectedDatabase.name : 'Database'}
                   {loading.databases && <span className="ml-2 text-xs">(Loading...)</span>}
                 </span>
+                {isProcessingNotification && (
+                  <div className="ml-2 flex items-center space-x-1">
+                    <div className="w-3 h-3 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+                    <span className="text-xs text-blue-600">Processing change...</span>
+                  </div>
+                )}
               </div>
 
               {getBreadcrumb().map((item, index) => (
@@ -542,72 +665,6 @@ const CollectionExplorer: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* 실시간 기능 UI 컨트롤 */}
-        {selectedCollection && (
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              {/* 실시간 토글 버튼 */}
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={handleRealtimeToggle}
-                  disabled={loading.realtime}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                    isRealtimeEnabled 
-                      ? 'bg-green-600' 
-                      : 'bg-gray-200'
-                  } ${loading.realtime ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isRealtimeEnabled ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-                <span className="text-sm font-medium text-gray-700">
-                  Real-time Updates
-                </span>
-                {loading.realtime && (
-                  <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
-                )}
-              </div>
-
-              {/* 실시간 상태 표시기 */}
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  realtimeStatus === 'connected' ? 'bg-green-500 animate-pulse' :
-                  realtimeStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-                  realtimeStatus === 'error' ? 'bg-red-500' :
-                  'bg-gray-300'
-                }`}></div>
-                <span className="text-xs text-gray-600 capitalize">
-                  {realtimeStatus === 'connected' ? 'Live' :
-                   realtimeStatus === 'connecting' ? 'Connecting...' :
-                   realtimeStatus === 'error' ? 'Error' :
-                   'Offline'}
-                </span>
-              </div>
-            </div>
-
-            {/* 변경 알림 배지 */}
-            {changeNotifications.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <div className="relative">
-                  <button
-                    onClick={() => setChangeNotifications([])}
-                    className="flex items-center space-x-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-medium hover:bg-blue-100 transition-colors"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM4 5v14h10m-10-6h10" />
-                    </svg>
-                    <span>{changeNotifications.length} change{changeNotifications.length > 1 ? 's' : ''}</span>
-                  </button>
-                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* 메인 컨텐츠 영역 - 동적 레이아웃 */}
@@ -774,6 +831,7 @@ const CollectionExplorer: React.FC = () => {
                   referencedCollection={parentField?.referencedCollection || null}
                   parentFieldPath={parentField?.path || []}
                   shouldRenderFields={shouldRenderFields}
+                  highlightedFields={highlightedFields}
                   onFieldSelect={handleFieldSelect}
                   onBackNavigation={handleBackNavigation}
                 />
@@ -782,75 +840,6 @@ const CollectionExplorer: React.FC = () => {
           })}
         </div>
       </div>
-
-      {/* 실시간 변경 알림 토스트 */}
-      {changeNotifications.slice(-3).map((notification, index) => (
-        <div
-          key={notification.collectionKey}
-          className={`fixed bottom-4 right-4 bg-white border-l-4 ${
-            notification.operationType === 'insert' ? 'border-green-500' :
-            notification.operationType === 'update' ? 'border-blue-500' :
-            notification.operationType === 'delete' ? 'border-red-500' :
-            'border-gray-500'
-          } rounded-lg shadow-lg p-4 max-w-sm transform transition-all duration-300 ease-in-out z-50`}
-          style={{
-            bottom: `${16 + index * 80}px`,
-            opacity: 1 - (index * 0.1)
-          }}
-        >
-          <div className="flex items-start space-x-3">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-              notification.operationType === 'insert' ? 'bg-green-100 text-green-600' :
-              notification.operationType === 'update' ? 'bg-blue-100 text-blue-600' :
-              notification.operationType === 'delete' ? 'bg-red-100 text-red-600' :
-              'bg-gray-100 text-gray-600'
-            }`}>
-              {notification.operationType === 'insert' ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-              ) : notification.operationType === 'update' ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              ) : notification.operationType === 'delete' ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 capitalize">
-                Document {notification.operationType}d
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {notification.collectionKey} • {new Date(notification.timestamp).toLocaleTimeString()}
-              </p>
-              {notification.documentKey && (
-                <p className="text-xs text-gray-400 mt-1 font-mono truncate">
-                  ID: {notification.documentKey._id}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={() => {
-                setChangeNotifications(prev => 
-                  prev.filter(n => n.collectionKey !== notification.collectionKey)
-                );
-              }}
-              className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      ))}
     </div>
   );
 };

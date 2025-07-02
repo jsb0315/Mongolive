@@ -1,13 +1,60 @@
 import React, { useState, useEffect } from 'react';
+import { useChangeStream } from '../../contexts/ChangeStreamContext';
+import { useDatabaseContext } from '../../contexts/DatabaseContext';
 
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: any) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
+const Sidebar: React.FC<SidebarProps> = ({ 
+  activeTab, 
+  onTabChange
+}) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [showContent, setShowContent] = useState<boolean>(true);
+  
+  // ChangeStream context
+  const {
+    subscriptions,
+    changeNotifications,
+    isLoading: changeStreamLoading,
+    subscribeToCollection,
+    unsubscribeFromCollection,
+    clearNotifications,
+    isSubscribed,
+    getSubscriptionStatus,
+    getCurrentCollection,
+    hasAnyActiveSubscription
+  } = useChangeStream();
+
+  // Database context
+  const { selectedDatabase, isConnected: isDatabaseConnected, currentCollection } = useDatabaseContext();
+
+  // Handle realtime toggle
+  const handleRealtimeToggle = async () => {
+    if (!selectedDatabase || !currentCollection) {
+      console.warn('Cannot toggle realtime: No database or collection selected');
+      return;
+    }
+
+    const subscribed = isSubscribed(selectedDatabase.name, currentCollection);
+    
+    if (subscribed) {
+      unsubscribeFromCollection(selectedDatabase.name, currentCollection);
+    } else {
+      await subscribeToCollection(selectedDatabase.name, currentCollection);
+    }
+  };
+
+  // Get current subscription status
+  const currentStatus = selectedDatabase && currentCollection 
+    ? getSubscriptionStatus(selectedDatabase.name, currentCollection)
+    : 'disconnected';
+
+  const isCurrentlySubscribed = selectedDatabase && currentCollection 
+    ? isSubscribed(selectedDatabase.name, currentCollection)
+    : false;
 
   const menuItems = [
     { id: 'collections', label: 'Collection Explorer I', icon: '📊' },
@@ -126,6 +173,108 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
           </button>
         ))}
       </nav>
+
+      {/* Realtime Controls Section */}
+      {showContent && !isCollapsed && currentCollection && isDatabaseConnected && (
+        <div className="mt-6 mx-4 border-t border-gray-200 pt-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Real-time</h3>
+            <div className="text-xs text-gray-500 mb-3">
+              Collection: <span className="font-medium">{currentCollection}</span>
+            </div>
+          </div>
+
+          {/* Realtime Toggle */}
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-600">Live Updates</span>
+            <button
+              onClick={handleRealtimeToggle}
+              disabled={changeStreamLoading}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
+                isCurrentlySubscribed ? 'bg-green-600' : 'bg-gray-200'
+              } ${changeStreamLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  isCurrentlySubscribed ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Status Display */}
+          <div className={`flex items-center space-x-2 px-2 py-1 rounded-md text-xs ${
+            currentStatus === 'connected' ? 'bg-green-100' :
+            currentStatus === 'connecting' ? 'bg-yellow-100' :
+            currentStatus === 'error' ? 'bg-red-100' :
+            'bg-gray-100'
+          }`}>
+            <span>
+              {currentStatus === 'connected' ? '✅' :
+               currentStatus === 'connecting' ? '🔄' :
+               currentStatus === 'error' ? '❌' :
+               '⚪'}
+            </span>
+            <span className={
+              currentStatus === 'connected' ? 'text-green-600' :
+              currentStatus === 'connecting' ? 'text-yellow-600' :
+              currentStatus === 'error' ? 'text-red-600' :
+              'text-gray-600'
+            }>
+              {currentStatus === 'connected' ? 'Live' :
+               currentStatus === 'connecting' ? 'Connecting...' :
+               currentStatus === 'error' ? 'Error' :
+               'Offline'}
+            </span>
+          </div>
+
+          {/* Notifications */}
+          {changeNotifications.length > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-gray-600">
+                  Changes ({changeNotifications.length})
+                </span>
+                <button
+                  onClick={clearNotifications}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="space-y-1 max-h-24 overflow-y-auto">
+                {changeNotifications.slice(0, 3).map((notification, index) => (
+                  <div key={index} className="text-xs p-2 bg-blue-50 rounded border-l-2 border-blue-400">
+                    <span className="font-medium text-blue-700">
+                      {notification.operationType}
+                    </span>
+                    {notification.documentKey?._id && (
+                      <div className="text-blue-600 truncate">
+                        ID: {String(notification.documentKey._id).slice(-8)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {changeNotifications.length > 3 && (
+                  <div className="text-xs text-gray-500 text-center">
+                    +{changeNotifications.length - 3} more
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Collapsed Realtime Indicator */}
+      {isCollapsed && currentCollection && isCurrentlySubscribed && isDatabaseConnected && (
+        <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2">
+          <div className={`w-3 h-3 rounded-full ${
+            currentStatus === 'connected' ? 'bg-green-500 animate-pulse' : 
+            currentStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+          }`} title={`Real-time: ${currentStatus}`}></div>
+        </div>
+      )}
 
       {/* Collapsed state indicator */}
       {isCollapsed && (
