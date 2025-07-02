@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 
 interface AuthSystemProps {
-  onAuthenticated: () => void;
+  onAuthenticated: (username?: string) => void;
   isSettings?: boolean;
+  currentUser?: string;
 }
 
-const AuthSystem: React.FC<AuthSystemProps> = ({ onAuthenticated, isSettings = false }) => {
+const AuthSystem: React.FC<AuthSystemProps> = ({ onAuthenticated, isSettings = false, currentUser = 'admin' }) => {
   const [username, setUsername] = useState<string>('admin');
   const [password, setPassword] = useState<string>('admin');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -22,7 +23,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onAuthenticated, isSettings = f
     setTimeout(() => {
       if (username === 'admin' && password === 'admin') {
         console.log('Login successful');
-        onAuthenticated();
+        onAuthenticated(username); // 사용자명 전달
       } else {
         setError('Invalid username or password');
         console.log('Login failed');
@@ -50,7 +51,7 @@ const AuthSystem: React.FC<AuthSystemProps> = ({ onAuthenticated, isSettings = f
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h5 className="font-medium text-gray-900">Current User</h5>
-                <p className="text-sm text-gray-600">admin</p>
+                <p className="text-sm text-gray-600">{currentUser}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h5 className="font-medium text-gray-900">Role</h5>

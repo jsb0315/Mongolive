@@ -92,6 +92,7 @@ function App() {
   const [projection, setProjection] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('collections');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<string>('admin');
 
   useEffect(() => {
     // const handleConnect = (): void => {
@@ -185,14 +186,25 @@ function App() {
       case 'performance':
         return <PerformanceMetrics />;
       case 'auth':
-        return <AuthSystem onAuthenticated={() => {}} isSettings={true} />;
+        return <AuthSystem 
+          onAuthenticated={(username?: string) => {
+            if (username) setCurrentUser(username);
+          }} 
+          isSettings={true} 
+          currentUser={currentUser}
+        />;
       default:
         return <CollectionExplorer />;
     }
   };
 
   if (!isAuthenticated) {
-    return <AuthSystem onAuthenticated={() => setIsAuthenticated(true)} />;
+    return <AuthSystem onAuthenticated={(username?: string) => {
+      setIsAuthenticated(true);
+      if (username) {
+        setCurrentUser(username);
+      }
+    }} />;
   }
 
   return (
@@ -200,7 +212,13 @@ function App() {
     <div className="flex h-screen bg-gray-50">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header onLogout={() => setIsAuthenticated(false)} />
+        <Header 
+          onLogout={() => {
+            setIsAuthenticated(false);
+            setCurrentUser('admin'); // 로그아웃 시 기본값으로 리셋
+          }} 
+          currentUser={currentUser} 
+        />
         <main className="flex-1 overflow-auto p-6">
           {renderContent()}
         </main>

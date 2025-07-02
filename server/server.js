@@ -34,6 +34,7 @@ const clientSubscriptions = new Map(); // socketId -> Set of collectionKeys
 // MongoDB 연결 풀 관리
 let mongoClient;
 let databases = new Map(); // 데이터베이스별 연결 캐싱
+let isShuttingDown = false; // 서버 종료 상태 추적
 
 // MongoDB 연결 초기화
 async function initMongoDB() {
@@ -170,6 +171,81 @@ app.get('/api/security/status', (req, res) => {
       }
     }
   });
+});
+
+// MongoDB 연결 상태 조회
+app.get('/api/mongodb/status', async (req, res) => {
+  try {
+    const status = {
+      connected: false,
+      serverInfo: null,
+      stats: null,
+      error: null
+    };
+
+    if (mongoClient && mongoClient.topology) {
+      // MongoDB 연결 상태 확인
+      const isConnected = mongoClient.topology.isConnected();
+      status.connected = isConnected;
+
+      if (isConnected) {
+        try {
+          // 서버 정보 가져오기
+          const adminDb = mongoClient.db().admin();
+          const serverStatus = await adminDb.command({ serverStatus: 1 });
+          const buildInfo = await adminDb.command({ buildInfo: 1 });
+          
+          status.serverInfo = {
+            version: buildInfo.version,
+            uptime: serverStatus.uptime,
+            host: serverStatus.host,
+            process: serverStatus.process,
+            connections: {
+              current: serverStatus.connections?.current || 0,
+              available: serverStatus.connections?.available || 0,
+              totalCreated: serverStatus.connections?.totalCreated || 0
+            },
+            memory: {
+              resident: serverStatus.mem?.resident || 0,
+              virtual: serverStatus.mem?.virtual || 0,
+              mapped: serverStatus.mem?.mapped || 0
+            },
+            network: {
+              bytesIn: serverStatus.network?.bytesIn || 0,
+              bytesOut: serverStatus.network?.bytesOut || 0,
+              numRequests: serverStatus.network?.numRequests || 0
+            }
+          };
+
+          // 데이터베이스 통계
+          const listDatabases = await adminDb.listDatabases();
+          status.stats = {
+            totalDatabases: listDatabases.databases.length,
+            totalSize: listDatabases.totalSize || 0,
+            storageEngine: serverStatus.storageEngine?.name || 'unknown'
+          };
+        } catch (dbError) {
+          console.error('Error getting MongoDB server info:', dbError);
+          status.error = 'Failed to get server details: ' + dbError.message;
+        }
+      } else {
+        status.error = 'MongoDB client is not connected';
+      }
+    } else {
+      status.error = 'MongoDB client is not initialized';
+    }
+
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('Error checking MongoDB status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check MongoDB status: ' + error.message
+    });
+  }
 });
 
 // IP 화이트리스트 관리 (런타임에 IP 추가/제거)
@@ -703,11 +779,19 @@ async function createChangeStream(dbName, collectionName) {
     
     changeStream.on('error', (error) => {
       console.error(`❌ ChangeStream error for ${collectionKey}:`, error);
-      // ChangeStream 재연결 시도
-      setTimeout(() => {
-        activeChangeStreams.delete(collectionKey);
-        createChangeStream(dbName, collectionName);
-      }, 5000);
+      activeChangeStreams.delete(collectionKey);
+      
+      // 서버가 종료 중이 아닐 때만 재연결 시도
+      if (!isShuttingDown) {
+        console.log(`🔄 Attempting to reconnect ChangeStream for ${collectionKey} in 5 seconds...`);
+        setTimeout(() => {
+          if (!isShuttingDown) {
+            createChangeStream(dbName, collectionName).catch(err => {
+              console.error(`❌ Failed to reconnect ChangeStream for ${collectionKey}:`, err);
+            });
+          }
+        }, 5000);
+      }
     });
     
     changeStream.on('close', () => {
@@ -972,6 +1056,14 @@ async function startServer() {
     server.listen(PORT, HOST, () => {
       console.log(`🚀 Server running on http://${HOST}:${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🔑 Process ID: ${process.pid}`);
+      console.log('💡 Press Ctrl+C to shutdown gracefully');
+    });
+    
+    // 서버 에러 처리
+    server.on('error', (error) => {
+      console.error('❌ Server error:', error);
+      gracefulShutdown('server-error');
     });
     
   } catch (error) {
@@ -980,25 +1072,100 @@ async function startServer() {
   }
 }
 
+// 프로세스 타이틀 설정 (ps 명령어에서 쉽게 찾을 수 있도록)
+process.title = 'mongolive-server';
+
 // 종료 시 정리
-process.on('SIGINT', async () => {
-  console.log('\n🔄 Shutting down gracefully...');
-  
-  // 모든 ChangeStream 정리
-  for (const [collectionKey, changeStream] of activeChangeStreams.entries()) {
-    console.log(`🔴 Closing ChangeStream for ${collectionKey}`);
-    changeStream.close();
+const gracefulShutdown = async (signal) => {
+  if (isShuttingDown) {
+    console.log('⚠️  Force shutdown - terminating immediately...');
+    process.exit(1);
   }
   
-  if (mongoClient) {
-    await mongoClient.close();
-    console.log('✅ MongoDB connection closed');
-  }
+  isShuttingDown = true;
+  console.log(`\n🔄 Shutting down gracefully... (${signal})`);
   
-  server.close(() => {
-    console.log('✅ Server closed');
+  // 강제 종료 타이머 (10초 후 강제 종료)
+  const forceExitTimer = setTimeout(() => {
+    console.log('⚠️  Force exit after 15 seconds timeout');
+    process.exit(1);
+  }, 15000);
+  
+  try {
+    // 1. 새로운 연결 차단 및 기존 연결 종료
+    console.log('🔄 Closing server...');
+    await new Promise((resolve) => {
+      server.close((err) => {
+        if (err) {
+          console.error('❌ Error closing server:', err);
+        } else {
+          console.log('✅ HTTP Server closed');
+        }
+        resolve();
+      });
+    });
+    
+    // 2. Socket.IO 연결 강제 종료
+    console.log('🔄 Closing Socket.IO connections...');
+    const sockets = await io.fetchSockets();
+    for (const socket of sockets) {
+      socket.disconnect(true);
+    }
+    io.close();
+    console.log('✅ Socket.IO closed');
+    
+    // 3. 모든 ChangeStream 강제 종료
+    console.log('🔄 Closing ChangeStreams...');
+    for (const [collectionKey, changeStream] of activeChangeStreams.entries()) {
+      console.log(`🔴 Closing ChangeStream for ${collectionKey}`);
+      try {
+        changeStream.close();
+      } catch (err) {
+        console.error(`❌ Error closing ChangeStream ${collectionKey}:`, err);
+      }
+    }
+    activeChangeStreams.clear();
+    console.log('✅ All ChangeStreams closed');
+    
+    // 4. 클라이언트 연결 정리
+    connectedClients.clear();
+    clientSubscriptions.clear();
+    console.log('✅ Client connections cleared');
+    
+    // 5. MongoDB 연결 종료
+    if (mongoClient) {
+      console.log('🔄 Closing MongoDB connection...');
+      await mongoClient.close(true); // force close
+      console.log('✅ MongoDB connection closed');
+    }
+    
+    // 6. 강제 종료 타이머 취소
+    clearTimeout(forceExitTimer);
+    
+    console.log('✅ Graceful shutdown completed');
     process.exit(0);
-  });
+    
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    clearTimeout(forceExitTimer);
+    process.exit(1);
+  }
+};
+
+// 여러 종료 시그널 처리
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));
+
+// 예상치 못한 에러로 인한 종료
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('unhandledRejection');
 });
 
 startServer();

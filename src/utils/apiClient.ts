@@ -74,10 +74,53 @@ export interface RealtimeEventHandlers {
   onUnsubscribed?: (info: { collectionKey: string; message: string }) => void;
 }
 
+// MongoDB 서버 연결 상태 모니터링 인터페이스
+export interface MongoDBStatus {
+  connected: boolean;
+  serverInfo?: {
+    version: string;
+    uptime: number;
+    host: string;
+    process: string;
+    connections: {
+      current: number;
+      available: number;
+      totalCreated: number;
+    };
+    memory: {
+      resident: number;
+      virtual: number;
+      mapped: number;
+    };
+    network: {
+      bytesIn: number;
+      bytesOut: number;
+      numRequests: number;
+    };
+  };
+  stats?: {
+    totalDatabases: number;
+    totalSize: number;
+    storageEngine: string;
+  };
+  error?: string;
+}
+
+export interface MongoDBStatusChangeHandler {
+  onStatusChange?: (status: MongoDBStatus) => void;
+  onError?: (error: Error) => void;
+}
+
 export class APIClient {
   private baseURL: string;
   private socket: Socket | null = null;
   private subscriptions: Map<string, RealtimeEventHandlers> = new Map();
+  
+  // MongoDB 상태 모니터링 관련 필드
+  private mongoStatusHandler: MongoDBStatusChangeHandler | null = null;
+  private mongoStatusPollInterval: NodeJS.Timeout | null = null;
+  private lastKnownMongoStatus: MongoDBStatus | null = null;
+  private mongoStatusPollIntervalMs: number = 10000; // 10초마다 폴링
 
   constructor(baseURL: string = API_BASE_URL) {
     this.baseURL = baseURL;
@@ -325,6 +368,9 @@ export class APIClient {
       this.socket = null;
       console.log('🔴 WebSocket disconnected manually');
     }
+    
+    // MongoDB 상태 모니터링도 중지
+    this.stopMongoDBStatusMonitoring();
   }
 
   // WebSocket 연결 상태 확인
@@ -335,6 +381,115 @@ export class APIClient {
   // 현재 구독 목록 반환
   getActiveSubscriptions(): string[] {
     return Array.from(this.subscriptions.keys());
+  }
+
+  // ===================== MongoDB 서버 상태 모니터링 =====================
+
+  // MongoDB 서버 상태 한 번 조회
+  async getMongoDBStatus(): Promise<MongoDBStatus> {
+    try {
+      const response = await this.request<APIResponse<MongoDBStatus>>('/api/mongodb/status');
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to get MongoDB status');
+      }
+      return response.data!;
+    } catch (error) {
+      console.error('❌ Failed to get MongoDB status:', error);
+      return {
+        connected: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // MongoDB 서버 상태 실시간 모니터링 시작
+  startMongoDBStatusMonitoring(handler: MongoDBStatusChangeHandler, pollIntervalMs: number = 10000): void {
+    // 기존 모니터링 중지
+    this.stopMongoDBStatusMonitoring();
+    
+    this.mongoStatusHandler = handler;
+    this.mongoStatusPollIntervalMs = pollIntervalMs;
+
+    // 초기 상태 확인
+    this.checkMongoDBStatus();
+
+    // 주기적 상태 확인 시작
+    this.mongoStatusPollInterval = setInterval(() => {
+      this.checkMongoDBStatus();
+    }, this.mongoStatusPollIntervalMs);
+
+    console.log(`🟢 MongoDB status monitoring started (interval: ${pollIntervalMs}ms)`);
+  }
+
+  // MongoDB 서버 상태 모니터링 중지
+  stopMongoDBStatusMonitoring(): void {
+    if (this.mongoStatusPollInterval) {
+      clearInterval(this.mongoStatusPollInterval);
+      this.mongoStatusPollInterval = null;
+      console.log('🔴 MongoDB status monitoring stopped');
+    }
+    this.mongoStatusHandler = null;
+    this.lastKnownMongoStatus = null;
+  }
+
+  // MongoDB 상태 확인 및 변경사항 알림
+  private async checkMongoDBStatus(): Promise<void> {
+    try {
+      const currentStatus = await this.getMongoDBStatus();
+      
+      // 상태 변경 확인
+      const hasChanged = !this.lastKnownMongoStatus || 
+                        this.lastKnownMongoStatus.connected !== currentStatus.connected ||
+                        this.lastKnownMongoStatus.error !== currentStatus.error;
+
+      // DB 연결이 끊어진 경우 자동으로 모든 ChangeStream 구독 해제
+      if (this.lastKnownMongoStatus?.connected && !currentStatus.connected) {
+        console.log('🔴 MongoDB connection lost - automatically unsubscribing all ChangeStreams');
+        this.unsubscribeAll();
+      }
+
+      if (hasChanged && this.mongoStatusHandler?.onStatusChange) {
+        this.mongoStatusHandler.onStatusChange(currentStatus);
+      }
+
+      this.lastKnownMongoStatus = currentStatus;
+    } catch (error) {
+      console.error('❌ Error during MongoDB status check:', error);
+      
+      // 네트워크 에러 등으로 상태 확인이 실패한 경우도 연결 끊어진 것으로 처리
+      const disconnectedStatus: MongoDBStatus = {
+        connected: false,
+        error: error instanceof Error ? error.message : 'Status check failed'
+      };
+      
+      // 이전에 연결되어 있었다면 ChangeStream 정리
+      if (this.lastKnownMongoStatus?.connected) {
+        console.log('🔴 MongoDB status check failed - unsubscribing all ChangeStreams');
+        this.unsubscribeAll();
+      }
+      
+      this.lastKnownMongoStatus = disconnectedStatus;
+      
+      if (this.mongoStatusHandler?.onError) {
+        const errorObj = error instanceof Error ? error : new Error('Unknown status check error');
+        this.mongoStatusHandler.onError(errorObj);
+      }
+      
+      // 상태 변경 핸들러에도 알림
+      if (this.mongoStatusHandler?.onStatusChange) {
+        this.mongoStatusHandler.onStatusChange(disconnectedStatus);
+      }
+    }
+  }
+
+  // 마지막으로 알려진 MongoDB 상태 반환
+  getLastKnownMongoDBStatus(): MongoDBStatus | null {
+    return this.lastKnownMongoStatus;
+  }
+
+  // MongoDB 상태 모니터링 실행 중인지 확인
+  isMongoDBStatusMonitoringActive(): boolean {
+    return this.mongoStatusPollInterval !== null;
   }
 
   // ===================== ChangeStream 헬퍼 메서드 =====================
