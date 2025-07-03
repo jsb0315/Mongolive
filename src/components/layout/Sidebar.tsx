@@ -109,9 +109,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <div className={`${isCollapsed ? 'w-16' : 'w-64'} bg-white shadow-lg border-r border-gray-200 transition-all duration-300 ease-in-out`}>
+    <div className={`${isCollapsed ? 'w-16' : 'w-64'} flex flex-col bg-white shadow-lg border-r border-gray-200 transition-all duration-300 ease-in-out`}>
       {/* Header */}
-      <div className="p-6 py-3 border-b border-gray-200 relative">
+      <div className="p-6 py-4 border-b border-gray-200 relative">
         <div className="flex items-center space-x-3">
           {showContent ? <div className={`w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0`}>
             <span className="text-white font-bold text-sm">M</span>
@@ -148,7 +148,8 @@ const Sidebar: React.FC<SidebarProps> = ({
           </svg>
         </button>
       </div>
-      
+
+      <div className={`flex flex-col overflow-y-scroll`}>  
       {/* Navigation */}
       <nav className="mt-6">
         {menuItems.map((item) => (
@@ -176,7 +177,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Realtime Controls Section */}
       {showContent && !isCollapsed && currentCollection && isDatabaseConnected && (
-        <div className="mt-6 mx-4 border-t border-gray-200 pt-4">
+        <div className="mt-6 mb-4 mx-4 border-t border-gray-200 pt-4">
           <div className="mb-3">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Real-time</h3>
             <div className="text-xs text-gray-500 mb-3">
@@ -243,18 +244,34 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               </div>
               <div className="space-y-1 max-h-24 overflow-y-auto">
-                {changeNotifications.slice(0, 3).map((notification, index) => (
-                  <div key={index} className="text-xs p-2 bg-blue-50 rounded border-l-2 border-blue-400">
-                    <span className="font-medium text-blue-700">
-                      {notification.operationType}
-                    </span>
-                    {notification.documentKey?._id && (
-                      <div className="text-blue-600 truncate">
-                        ID: {String(notification.documentKey._id).slice(-8)}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  {changeNotifications.slice(0, 3).map((notification, index) => (
+                    <div key={index} className="text-xs p-2 bg-blue-50 rounded border-l-2 border-blue-400">
+                      <span className="font-medium text-blue-700">
+                        {notification.operationType}
+                      </span>
+                      {notification.documentKey?._id && notification.updatedPaths?.length && (
+                        <div>
+                          <div className="text-blue-600 truncate">
+                            ID: {String(notification.documentKey._id).slice(-8)}
+                          </div>
+                          <div className="text-blue-600 truncate">
+                            {notification.timestamp}
+                          </div>
+                          <div className="flex text-slate-600 flex-wrap bg-white rounded-md p-2">
+                            <div className="flex">
+                              {notification.collectionKey}.
+                            </div>
+                            <div className="w-16 truncate">
+                              {notification.documentKey._id}
+                            </div>
+                            <div className="flex ">
+                              . {notification.updatedPaths[index]?.path}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 {changeNotifications.length > 3 && (
                   <div className="text-xs text-gray-500 text-center">
                     +{changeNotifications.length - 3} more
@@ -265,6 +282,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       )}
+      </div>
 
       {/* Collapsed Realtime Indicator */}
       {isCollapsed && currentCollection && isCurrentlySubscribed && isDatabaseConnected && (
