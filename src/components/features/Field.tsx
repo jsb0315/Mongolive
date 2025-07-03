@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FieldPath } from '../../types/collectionTypes';
 import { formatValue, canTraverse } from '../../utils/mongoUtils';
 
@@ -25,8 +25,50 @@ const Field: React.FC<FieldProps> = ({
   const fieldValue = field.value;
   const fieldType = field.type || [];
 
+  // 편집 모드 상태 관리
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedName, setEditedName] = useState(field.name);
+  const [editedValue, setEditedValue] = useState(
+    typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue)
+  );
+
   // const isRefField = fieldType.includes('Referenced') && field.referencedId;  // ReferencedDocument 탐색 여부
   const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
+
+  // 편집 모드 핸들러 함수들
+  const handleEditStart = () => {
+    setIsEditing(true);
+  };
+
+  const handleEditCancel = () => {
+    setIsEditing(false);
+    setEditedName(field.name);
+    setEditedValue(typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
+  };
+
+  const handleEditSave = () => {
+    const isTraversable = canTraverse(fieldValue, fieldType);
+    
+    console.log('Saving edited field:', {
+      originalName: field.name,
+      newName: editedName,
+      originalValue: fieldValue,
+      newValue: isTraversable ? fieldValue : editedValue, // Keep original value for traversable fields
+      isTraversable: isTraversable,
+      fieldType: fieldType,
+      changedFields: isTraversable ? ['name'] : ['name', 'value']
+    });
+    
+    setIsEditing(false);
+    // TODO: 실제 저장 로직 구현
+    // Note: For traversable fields (ObjectId, Array, Document), only the field name is editable
+  };
+
+  const handleEditDelete = () => {
+    console.log('Deleting field:', field.name);
+    setIsEditing(false);
+    // TODO: 실제 삭제 로직 구현
+  };
 
   const renderFieldValue = () => {
     const {
@@ -122,13 +164,15 @@ const Field: React.FC<FieldProps> = ({
   const displayValue = isRefField ? fieldValue.toString() : formatValue(fieldValue, fieldType);  // 필드 값 표시
   return (
     <div
-      onClick={() => onFieldSelect(field, parentPath, depth)}
-      className={`p-2 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden mb-1 ${
+      onClick={() => !isEditing && onFieldSelect(field, parentPath, depth)}
+      className={`group p-2 rounded-lg ${!isEditing ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 overflow-hidden mb-1 ${
         isHighlighted 
           ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse' 
           : isSelected
             ? 'bg-slate-100 border border-slate-200 shadow-sm'
-            : 'hover:bg-gray-50 border border-transparent'
+            : isEditing
+              ? 'bg-blue-50 border border-blue-200 shadow-sm'
+              : 'hover:bg-gray-50 border border-transparent'
       } ${fieldType.includes('ObjectId') ? 'ring-1 ring-blue-200' : ''} ${isRefField ? 'ring-1 ring-cyan-200' : ''}`}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
@@ -137,18 +181,143 @@ const Field: React.FC<FieldProps> = ({
           <div className="flex items-center gap-2 ml-1 mb-1 min-w-0 truncate justify-between">
 
             <div className="flex items-center justify-center gap-1 min-w-0 truncate text-ellipsis">
-              {!isArrayRefDoc && (
-                <span className="font-medium text-gray-900 text-sm">
-                  {displayName}:
-                </span>
+              {isEditing ? (
+                // 편집 모드: 입력 필드
+                <div className="flex items-center gap-1 w-full">
+                  {canTraverse(fieldValue, fieldType) ? (
+                    // traversable 필드: name만 편집 가능
+                    !isArrayRefDoc ? (
+                      <>
+                        <input
+                          type="text"
+                          value={editedName}
+                          onChange={(e) => setEditedName(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex font-medium text-gray-900 text-sm bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 max-w-28 flex-shrink"
+                          style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
+                        />
+                        <span className="text-gray-900">:</span>
+                        <span 
+                          className="text-sm text-gray-600 font-mono bg-gray-100 border border-gray-300 rounded px-1 py-0.5 min-w-0 flex-1 inline-block"
+                          title="Complex values (ObjectId, Array, Document) cannot be edited directly"
+                        >
+                          {displayValue}
+                        </span>
+                      </>
+                    ) : (
+                      // Array reference document의 경우 값만 표시
+                      <span 
+                        className="text-sm text-gray-600 font-mono bg-gray-100 border border-gray-300 rounded px-1 py-0.5 min-w-0 flex-1 inline-block"
+                        title="Complex values (ObjectId, Array, Document) cannot be edited directly"
+                      >
+                        {displayValue}
+                      </span>
+                    )
+                  ) : (
+                    // non-traversable 필드: name과 value 모두 편집 가능
+                    <>
+                      {!isArrayRefDoc && (
+                        <>
+                          <input
+                            type="text"
+                            value={editedName}
+                            onChange={(e) => setEditedName(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex font-medium text-gray-900 text-sm bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 max-w-28 flex-shrink"
+                            style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
+                          />
+                          <span className="text-gray-900">:</span>
+                        </>
+                      )}
+                      <input
+                        type="text"
+                        value={editedValue}
+                        onChange={(e) => setEditedValue(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 min-w-0 flex-1"
+                      />
+                    </>
+                  )}
+                </div>
+              ) : (
+                // 보기 모드: 기존 디스플레이
+                <>
+                  {!isArrayRefDoc && (
+                    <span className="font-medium text-gray-900 text-sm">
+                      {displayName}:
+                    </span>
+                  )}
+                  <span className={"text-sm text-gray-600 font-mono truncate"}>
+                    {displayValue}
+                  </span>
+                </>
               )}
-              <span className={"text-sm text-gray-600 font-mono truncate"}>
-                {displayValue}
-              </span>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center space-x-1">
               {/* MongoDB 특화 아이콘들 */}
+              {/* Edit Mode Icons */}
+              {isEditing ? (
+                <div className="flex items-center space-x-1">
+                  {/* Delete Icon */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditDelete();
+                    }}
+                    className="p-1 rounded hover:bg-red-100 transition-colors duration-200"
+                    title="Delete field"
+                  >
+                    <svg className="w-4 h-4 text-red-500 hover:text-red-700 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                  {/* Save Icon */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditSave();
+                    }}
+                    className="p-1 rounded hover:bg-green-100 transition-colors duration-200"
+                    title="Save changes"
+                  >
+                    <svg className="w-4 h-4 text-green-500 hover:text-green-700 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  {/* Cancel Icon */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditCancel();
+                    }}
+                    className="p-1 rounded hover:bg-gray-100 transition-colors duration-200"
+                    title="Cancel edit"
+                  >
+                    <svg className="w-4 h-4 text-gray-500 hover:text-gray-700 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Edit Icon - 호버 시에만 표시 */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditStart();
+                      }}
+                      className="p-1 rounded hover:bg-gray-200 transition-colors duration-200"
+                      title="Edit field value"
+                    >
+                      <svg className="w-4 h-4 text-gray-500 hover:text-gray-700 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </div>
+                </>
+              )}
               {/* Chain */}
               {fieldType.includes('ObjectId') && (
                 <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -183,8 +352,8 @@ const Field: React.FC<FieldProps> = ({
         </div>
       </div>
 
-      {/* 선택된 필드의 상세 정보 */}
-      {isSelected && depth === currentDepth && (
+      {/* 선택된 필드의 상세 정보 - 편집 모드가 아닐 때만 표시 */}
+      {isSelected && depth === currentDepth && !isEditing && (
         <div className="mt-3 pt-3 border-t border-purple-200 overflow-hidden"
           onClick={(e) => e.stopPropagation()}>
           <pre className="bg-gray-50 p-3 rounded text-xs overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
