@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FieldPath } from '../../types/collectionTypes';
 import { formatValue, canTraverse } from '../../utils/mongoUtils';
+import { useDocumentContext } from '../../contexts/DocumentContext';
 
 interface FieldProps {
   field: FieldPath;
@@ -25,6 +26,9 @@ const Field: React.FC<FieldProps> = ({
   const fieldValue = field.value;
   const fieldType = field.type || [];
 
+  // Document context for updates
+  const { updateField, deleteField, isUpdating, error, clearError } = useDocumentContext();
+
   // 편집 모드 상태 관리
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(field.name);
@@ -38,36 +42,97 @@ const Field: React.FC<FieldProps> = ({
   // 편집 모드 핸들러 함수들
   const handleEditStart = () => {
     setIsEditing(true);
+    clearError(); // Clear any previous errors
   };
 
   const handleEditCancel = () => {
     setIsEditing(false);
     setEditedName(field.name);
     setEditedValue(typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
+    clearError();
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     const isTraversable = canTraverse(fieldValue, fieldType);
     
-    console.log('Saving edited field:', {
-      originalName: field.name,
-      newName: editedName,
-      originalValue: fieldValue,
-      newValue: isTraversable ? fieldValue : editedValue, // Keep original value for traversable fields
-      isTraversable: isTraversable,
-      fieldType: fieldType,
-      changedFields: isTraversable ? ['name'] : ['name', 'value']
-    });
-    
-    setIsEditing(false);
-    // TODO: 실제 저장 로직 구현
-    // Note: For traversable fields (ObjectId, Array, Document), only the field name is editable
+    try {
+      // Determine what changes to make
+      const nameChanged = editedName !== field.name;
+      const valueChanged = !isTraversable && editedValue !== (typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
+      
+      if (!nameChanged && !valueChanged) {
+        // No changes made
+        setIsEditing(false);
+        return;
+      }
+
+      // Build field path from parent path and current field name
+      const fieldPath = [...parentPath, field.name];
+      
+      let newValue = undefined;
+      if (valueChanged && !isTraversable) {
+        // Try to parse the value for non-traversable fields
+        try {
+          newValue = JSON.parse(editedValue);
+        } catch {
+          // If parsing fails, treat as string
+          newValue = editedValue;
+        }
+      }
+      
+      console.log('Saving field changes:', {
+        originalName: field.name,
+        newName: nameChanged ? editedName : undefined,
+        originalValue: fieldValue,
+        newValue: newValue,
+        isTraversable: isTraversable,
+        fieldType: fieldType,
+        fieldPath: fieldPath
+      });
+
+      const success = await updateField(
+        fieldPath,
+        nameChanged ? editedName : undefined,
+        newValue
+      );
+      
+      if (success) {
+        setIsEditing(false);
+        console.log('✅ Field updated successfully');
+      }
+      // Error handling is done in the context
+      
+    } catch (err) {
+      console.error('❌ Failed to save field:', err);
+      // Error is handled by the context
+    }
   };
 
-  const handleEditDelete = () => {
-    console.log('Deleting field:', field.name);
-    setIsEditing(false);
-    // TODO: 실제 삭제 로직 구현
+  const handleEditDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete the field "${field.name}"?`)) {
+      return;
+    }
+
+    try {
+      const fieldPath = [...parentPath, field.name];
+      
+      console.log('Deleting field:', {
+        fieldName: field.name,
+        fieldPath: fieldPath
+      });
+
+      const success = await deleteField(fieldPath);
+      
+      if (success) {
+        setIsEditing(false);
+        console.log('✅ Field deleted successfully');
+      }
+      // Error handling is done in the context
+      
+    } catch (err) {
+      console.error('❌ Failed to delete field:', err);
+      // Error is handled by the context
+    }
   };
 
   const renderFieldValue = () => {
@@ -165,7 +230,7 @@ const Field: React.FC<FieldProps> = ({
   return (
     <div
       onClick={() => !isEditing && onFieldSelect(field, parentPath, depth)}
-      className={`group p-2 rounded-lg ${!isEditing ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 overflow-hidden mb-1 ${
+      className={`relative group p-2 rounded-lg ${!isEditing ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 overflow-hidden mb-1 ${
         isHighlighted 
           ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse' 
           : isSelected
@@ -175,6 +240,37 @@ const Field: React.FC<FieldProps> = ({
               : 'hover:bg-gray-50 border border-transparent'
       } ${fieldType.includes('ObjectId') ? 'ring-1 ring-blue-200' : ''} ${isRefField ? 'ring-1 ring-cyan-200' : ''}`}
     >
+      {/* Loading overlay */}
+      {isUpdating && (
+        <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+          <div className="flex items-center space-x-2 text-blue-600">
+            <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+            <span className="text-sm">Updating...</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Error display */}
+      {error && (
+        <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-xs">
+          <div className="flex items-center space-x-1">
+            <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{error}</span>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                clearError();
+              }}
+              className="ml-auto text-red-500 hover:text-red-700"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+      
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* 키 이름 */}
@@ -291,7 +387,7 @@ const Field: React.FC<FieldProps> = ({
                       e.stopPropagation();
                       handleEditCancel();
                     }}
-                    className="p-1 rounded hover:bg-gray-100 transition-colors duration-200"
+                    className="p-1 rounded hover:bg-gray-200 transition-colors duration-200"
                     title="Cancel edit"
                   >
                     <svg className="w-4 h-4 text-gray-500 hover:text-gray-700 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -375,9 +471,9 @@ const Field: React.FC<FieldProps> = ({
                 Explore Structure
               </button>
             )}
-            <button className="px-3 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 transition-colors duration-200">
+            {/* <button className="px-3 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 transition-colors duration-200">
               Edit Value
-            </button>
+            </button> */}
           </div>
         </div>
       )}
