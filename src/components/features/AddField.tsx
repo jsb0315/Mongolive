@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDocumentContext } from '../../contexts/DocumentContext';
+import TypeSelector from './TypeSelector';
 
 export interface AddFieldProps {
   parentPath: string[];
@@ -175,17 +176,31 @@ export const AddFieldButton: React.FC<AddFieldComponentProps> = ({
         {/* Field type selector */}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-          <select
+          <TypeSelector
             value={newFieldType}
-            onChange={(e) => setNewFieldType(e.target.value as any)}
-            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="string">String</option>
-            <option value="number">Number</option>
-            <option value="boolean">Boolean</option>
-            <option value="object">Object</option>
-            <option value="array">Array</option>
-          </select>
+            onChange={(newType) => {
+              setNewFieldType(newType);
+              // Reset value based on type
+              switch (newType) {
+                case 'boolean':
+                  setNewFieldValue('true');
+                  break;
+                case 'number':
+                  setNewFieldValue('0');
+                  break;
+                case 'object':
+                  setNewFieldValue('{}');
+                  break;
+                case 'array':
+                  setNewFieldValue('[]');
+                  break;
+                default:
+                  setNewFieldValue('');
+              }
+            }}
+            className="w-full"
+            showTypeSpan={true}
+          />
         </div>
         
         {/* Field value input */}

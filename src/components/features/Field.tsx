@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { FieldPath } from '../../types/collectionTypes';
 import { formatValue, canTraverse } from '../../utils/mongoUtils';
 import { useDocumentContext } from '../../contexts/DocumentContext';
+import TypeSpan from './TypeSpan';
+import TypeSelector from './TypeSelector';
 
 interface FieldProps {
   field: FieldPath;
@@ -35,7 +37,17 @@ const Field: React.FC<FieldProps> = ({
   const [editedValue, setEditedValue] = useState(
     typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue)
   );
+  const [editedType, setEditedType] = useState<'string' | 'number' | 'boolean' | 'object' | 'array'>(() => {
+    // Determine initial type based on field value
+    if (typeof fieldValue === 'string') return 'string';
+    if (typeof fieldValue === 'number') return 'number';
+    if (typeof fieldValue === 'boolean') return 'boolean';
+    if (Array.isArray(fieldValue)) return 'array';
+    if (typeof fieldValue === 'object' && fieldValue !== null) return 'object';
+    return 'string';
+  });
 
+  const isTraversable = canTraverse(fieldValue, fieldType);
   // const isRefField = fieldType.includes('Referenced') && field.referencedId;  // ReferencedDocument 탐색 여부
   const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
 
@@ -72,17 +84,22 @@ const Field: React.FC<FieldProps> = ({
     setIsEditing(false);
     setEditedName(field.name);
     setEditedValue(typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
+    // Reset type to original field type
+    if (typeof fieldValue === 'string') setEditedType('string');
+    else if (typeof fieldValue === 'number') setEditedType('number');
+    else if (typeof fieldValue === 'boolean') setEditedType('boolean');
+    else if (Array.isArray(fieldValue)) setEditedType('array');
+    else if (typeof fieldValue === 'object' && fieldValue !== null) setEditedType('object');
+    else setEditedType('string');
     clearError();
   };
 
   const handleEditSave = async () => {
-    const isTraversable = canTraverse(fieldValue, fieldType);
-    
     try {
       // Determine what changes to make
       const nameChanged = editedName !== field.name;
       const valueChanged = !isTraversable && editedValue !== (typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
-      
+
       if (!nameChanged && !valueChanged) {
         // No changes made
         setIsEditing(false);
@@ -91,23 +108,43 @@ const Field: React.FC<FieldProps> = ({
 
       // Build field path from parent path and current field name
       const fieldPath = [...parentPath, field.name];
-      
+
       let newValue = undefined;
       if (valueChanged && !isTraversable) {
-        // Try to parse the value for non-traversable fields
+        // Parse the value based on the selected type
         try {
-          newValue = JSON.parse(editedValue);
-        } catch {
-          // If parsing fails, treat as string
-          newValue = editedValue;
+          switch (editedType) {
+            case 'number':
+              newValue = parseFloat(editedValue);
+              if (isNaN(newValue)) {
+                throw new Error('Invalid number');
+              }
+              break;
+            case 'boolean':
+              newValue = editedValue.toLowerCase() === 'true';
+              break;
+            case 'object':
+              newValue = JSON.parse(editedValue || '{}');
+              break;
+            case 'array':
+              newValue = JSON.parse(editedValue || '[]');
+              break;
+            default:
+              newValue = editedValue;
+          }
+        } catch (parseError) {
+          console.error('❌ Failed to parse field value:', parseError);
+          // Error is handled by the context
+          return;
         }
       }
-      
+
       console.log('Saving field changes:', {
         originalName: field.name,
         newName: nameChanged ? editedName : undefined,
         originalValue: fieldValue,
         newValue: newValue,
+        selectedType: editedType,
         isTraversable: isTraversable,
         fieldType: fieldType,
         fieldPath: fieldPath
@@ -118,13 +155,13 @@ const Field: React.FC<FieldProps> = ({
         nameChanged ? editedName : undefined,
         newValue
       );
-      
+
       if (success) {
         setIsEditing(false);
         console.log('✅ Field updated successfully');
       }
       // Error handling is done in the context
-      
+
     } catch (err) {
       console.error('❌ Failed to save field:', err);
       // Error is handled by the context
@@ -138,20 +175,20 @@ const Field: React.FC<FieldProps> = ({
 
     try {
       const fieldPath = [...parentPath, field.name];
-      
+
       console.log('Deleting field:', {
         fieldName: field.name,
         fieldPath: fieldPath
       });
 
       const success = await deleteField(fieldPath);
-      
+
       if (success) {
         setIsEditing(false);
         console.log('✅ Field deleted successfully');
       }
       // Error handling is done in the context
-      
+
     } catch (err) {
       console.error('❌ Failed to delete field:', err);
       // Error is handled by the context
@@ -176,49 +213,39 @@ const Field: React.FC<FieldProps> = ({
     const refDocLength = isRefDoc && referencedDocuments ? Object.keys(referencedDocuments[0]).length : null;
     return (
       <div className="space-y-1">
-        <div className="flex items-center space-x-2">
-          {(() => {
-            const getTypeColorClass = (typeStr: string) => {
-              switch (typeStr) {
-                case 'ObjectId': return 'bg-blue-100 text-blue-700';
-                case 'Document': return 'bg-pink-100 text-pink-700';
-                case 'Embedded': return 'bg-purple-100 text-purple-700';
-                case 'Referenced': return 'bg-cyan-100 text-cyan-700';
-                case 'Array': return 'bg-green-100 text-green-700';
-                case 'String': return 'bg-gray-100 text-gray-700';
-                case 'Int32':
-                case 'Double':
-                case 'Decimal128': return 'bg-yellow-100 text-yellow-700';
-                case 'Boolean': return 'bg-orange-100 text-orange-700';
-                case 'Date': return 'bg-lime-100 text-lime-700';
-                default: return 'bg-gray-100 text-gray-700';
-              }
-            };
 
-            const renderTypeSpans = () => {
-              if (Array.isArray(type)) {
-                return type.map((typeStr, index) => (
-                  <span
-                    key={index}
-                    className={`px-2 py-1 text-[10px] rounded-full font-medium ${getTypeColorClass(typeStr)}`}
-                  >
-                    {typeStr}
-                  </span>
-                ));
-              } else {
-                return (
-                  <span
-                    className={`px-2 py-1 text-[10px] rounded-full font-medium ${getTypeColorClass(type)}`}
-                  >
-                    {type}
-                  </span>
-                );
+        {isEditing ? (
+          <TypeSelector
+            value={editedType}
+            onChange={(newType) => {
+              setEditedType(newType);
+              // Reset value based on type
+              switch (newType) {
+                case 'boolean':
+                  setEditedValue('true');
+                  break;
+                case 'number':
+                  setEditedValue('0');
+                  break;
+                case 'object':
+                  setEditedValue('{}');
+                  break;
+                case 'array':
+                  setEditedValue('[]');
+                  break;
+                default:
+                  setEditedValue('');
               }
-            };
-
-            return renderTypeSpans();
-          })()}
-        </div>
+            }}
+            disabled={isTraversable}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : <div onDoubleClick={(e) => {
+          e.stopPropagation();
+          handleEditStart();
+        }}>
+          <TypeSpan type={type} />
+        </div>}
 
         {/* Reference 정보 프리뷰 */}
         {type.includes('Referenced') && referencedDocuments && typeof referencedDocuments[0] === 'object' && (
@@ -253,15 +280,14 @@ const Field: React.FC<FieldProps> = ({
   return (
     <div
       onClick={() => !isEditing && onFieldSelect(field, parentPath, depth)}
-      className={`relative group p-2 rounded-lg ${!isEditing ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 overflow-hidden mb-1 ${
-        isHighlighted 
-          ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse' 
+      className={`relative group p-2 rounded-lg ${!isEditing ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 overflow-hidden mb-1 ${isHighlighted
+          ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse'
           : isSelected
             ? 'bg-slate-100 border border-slate-200 shadow-sm'
             : isEditing
               ? 'bg-blue-50 border border-blue-200 shadow-sm'
               : 'hover:bg-gray-50 border border-transparent'
-      } ${fieldType.includes('ObjectId') ? 'ring-1 ring-blue-200' : ''} ${isRefField ? 'ring-1 ring-cyan-200' : ''}`}
+        } ${fieldType.includes('ObjectId') ? 'ring-1 ring-blue-200' : ''} ${isRefField ? 'ring-1 ring-cyan-200' : ''}`}
     >
       {/* Loading overlay */}
       {isUpdating && (
@@ -272,7 +298,7 @@ const Field: React.FC<FieldProps> = ({
           </div>
         </div>
       )}
-      
+
       {/* Error display */}
       {error && (
         <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-xs">
@@ -281,7 +307,7 @@ const Field: React.FC<FieldProps> = ({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>{error}</span>
-            <button 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 clearError();
@@ -293,17 +319,17 @@ const Field: React.FC<FieldProps> = ({
           </div>
         </div>
       )}
-      
+
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* 키 이름 */}
-          <div className="flex items-center gap-2 ml-1 mb-1 min-w-0 truncate justify-between">
+          <div className="flex items-center gap-2 mb-1 min-w-0 truncate justify-between">
 
-            <div className="flex items-center justify-center gap-1 min-w-0 truncate text-ellipsis">
+            <div className="flex items-center justify-center min-w-0 truncate text-ellipsis">
               {isEditing ? (
                 // 편집 모드: 입력 필드
-                <div className="CancelESC flex items-center gap-1 w-full">
-                  {canTraverse(fieldValue, fieldType) ? (
+                <div className="flex items-center gap-1 mb-1 min-w-0 truncate justify-between">
+                  {isTraversable ? (
                     // traversable 필드: name만 편집 가능
                     !isArrayRefDoc ? (
                       <>
@@ -316,7 +342,7 @@ const Field: React.FC<FieldProps> = ({
                           style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
                         />
                         <span className="text-gray-900">:</span>
-                        <span 
+                        <span
                           className="text-sm text-gray-600 font-mono bg-gray-100 border border-gray-300 rounded px-1 py-0.5 min-w-0 flex-1 inline-block"
                           title="Complex values (ObjectId, Array, Document) cannot be edited directly"
                         >
@@ -325,7 +351,7 @@ const Field: React.FC<FieldProps> = ({
                       </>
                     ) : (
                       // Array reference document의 경우 값만 표시
-                      <span 
+                      <span
                         className="text-sm text-gray-600 font-mono bg-gray-100 border border-gray-300 rounded px-1 py-0.5 min-w-0 flex-1 inline-block"
                         title="Complex values (ObjectId, Array, Document) cannot be edited directly"
                       >
@@ -334,9 +360,9 @@ const Field: React.FC<FieldProps> = ({
                     )
                   ) : (
                     // non-traversable 필드: name과 value 모두 편집 가능
-                    <>
+                    <div className="flex w-full space-x-1">
                       {!isArrayRefDoc && (
-                        <>
+                        <div className="flex items-center gap-1">
                           <input
                             type="text"
                             value={editedName}
@@ -346,33 +372,60 @@ const Field: React.FC<FieldProps> = ({
                             style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
                           />
                           <span className="text-gray-900">:</span>
-                        </>
+                        </div>
                       )}
-                      <input
-                        type="text"
-                        value={editedValue}
-                        onChange={(e) => setEditedValue(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 min-w-0 flex-1"
-                      />
-                    </>
+
+                      {/* Value input based on type */}
+                      <div className="flex-1">
+                        {editedType === 'boolean' ? (
+                          <select
+                            value={editedValue}
+                            onChange={(e) => setEditedValue(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        ) : editedType === 'object' || editedType === 'array' ? (
+                          <textarea
+                            value={editedValue}
+                            onChange={(e) => setEditedValue(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            rows={2}
+                            placeholder={editedType === 'object' ? '{"key": "value"}' : '["item1", "item2"]'}
+                          />
+                        ) : (
+                          <input
+                            type={editedType === 'number' ? 'number' : 'text'}
+                            value={editedValue}
+                            onChange={(e) => setEditedValue(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder={`Enter ${editedType} value...`}
+                          />
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
               ) : (
                 // 보기 모드: 기존 디스플레이
                 <>
                   {!isArrayRefDoc && (
-                    <span 
+                    <span
                       className="font-medium text-gray-900 text-sm cursor-pointer hover:bg-gray-100 px-1 rounded"
                       onDoubleClick={(e) => {
                         e.stopPropagation();
                         handleEditStart();
                       }}
                     >
-                      {displayName}:
+                      {displayName}
                     </span>
                   )}
-                  <span 
+                  <span className="text-gray-900">:</span>
+                  <span
                     className="text-sm text-gray-600 font-mono truncate cursor-pointer hover:bg-gray-100 px-1 rounded"
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -468,7 +521,7 @@ const Field: React.FC<FieldProps> = ({
                 </svg>
               )}
               {/* CanTraverse */}
-              {canTraverse(fieldValue, fieldType) && (
+              {isTraversable && (
                 <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -501,7 +554,7 @@ const Field: React.FC<FieldProps> = ({
                 Explore Document
               </button>
             )}
-            {canTraverse(fieldValue, fieldType) && (
+            {isTraversable && (
               <button className="px-3 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors duration-200">
                 Explore Structure
               </button>
