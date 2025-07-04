@@ -46,7 +46,7 @@ const FieldSection: React.FC<FieldSectionProps> = ({
   onFieldSelect,
   onBackNavigation
 }) => {
-  return !shouldRenderFields ? <div>hi</div>: (
+  return !shouldRenderFields ? <div>hi</div> : (
     <div
       className={`${colSpan === 2 ? 'col-span-2' : ''} bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full transition-all duration-300 ${isActive ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full'
         } ${hasRefField ? 'border-blue-300 shadow-blue-100' : ''} ${hasRefField && referencedId ? 'border-cyan-300 shadow-cyan-100' : ''}`}
@@ -56,8 +56,8 @@ const FieldSection: React.FC<FieldSectionProps> = ({
     >
       {/* Header */}
       <div className={`p-3 border-b border-gray-200 overflow-hidden ${isRefField ? 'bg-blue-50' :
-          referencedId ? 'bg-cyan-50' :
-            'bg-gray-50'
+        referencedId ? 'bg-cyan-50' :
+          'bg-gray-50'
         }`}>
         <div className="flex items-center justify-between min-w-0">
           <h3 className="text-sm font-semibold text-gray-900 flex items-center truncate flex-1 min-w-0">
@@ -73,7 +73,7 @@ const FieldSection: React.FC<FieldSectionProps> = ({
             }
             <span className="truncate">{title}</span>
             {(referencedDatabase && referencedCollection) && (
-              <span className={'ml-2 px-2 py-1 text-xs rounded text-cyan-700 '+(isRefField ? 'bg-blue-100' : 'bg-cyan-100')}>
+              <span className={'ml-2 px-2 py-1 text-xs rounded text-cyan-700 ' + (isRefField ? 'bg-blue-100' : 'bg-cyan-100')}>
                 {referencedDatabase}/{referencedCollection}
               </span>
             )}
@@ -93,7 +93,32 @@ const FieldSection: React.FC<FieldSectionProps> = ({
 
       {/* Content */}
       <div className="flex-1 flex-col overflow-y-auto p-2 max-h-full overflow-x-hidden">
-        {fields.length === 0 ? (
+
+        {/* 기존 필드들 */}
+        {fields
+          .filter(field => field.name !== '_id')
+          .map((field) => (
+            <Field
+              key={field.name}
+              field={field}
+              selectedFieldName={selectedFieldAtDepth}
+              depth={depth}
+              currentDepth={currentDepth}
+              isHighlighted={highlightedFields.has(field.name)}
+              onFieldSelect={onFieldSelect}
+              parentPath={depth === 0 ? [] : parentFieldPath}
+            />
+          ))}
+        {depth || fields.length ? ( // 새 필드 추가를 위한 UI
+          < AddField
+            parentPath={parentFieldPath || []}
+            depth={depth}
+            mode="field"
+            onSuccess={() => {
+              console.log('✅ Field added successfully');
+            }}
+          />
+        ) : (
           <div className="p-4 text-center text-gray-500 text-sm">
             <div className="truncate">
               {depth === 0 ? 'Select a document to view fields' :
@@ -102,35 +127,6 @@ const FieldSection: React.FC<FieldSectionProps> = ({
                     'No nested fields'}
             </div>
           </div>
-        ) : (
-          <>
-            {/* 기존 필드들 */}
-            {fields
-              .filter(field => field.name !== '_id')
-              .map((field) => (
-                <Field
-                  key={field.name}
-                  field={field}
-                  selectedFieldName={selectedFieldAtDepth}
-                  depth={depth}
-                  currentDepth={currentDepth}
-                  isHighlighted={highlightedFields.has(field.name)}
-                  onFieldSelect={onFieldSelect}
-                  parentPath={depth === 0 ? [] : parentFieldPath}
-                />
-              ))
-            }
-            
-            {/* 새 필드 추가를 위한 UI */}
-            <AddField
-              parentPath={parentFieldPath || []}
-              depth={depth}
-              mode="field"
-              onSuccess={() => {
-                console.log('✅ Field added successfully');
-              }}
-            />
-          </>
         )}
       </div>
     </div>

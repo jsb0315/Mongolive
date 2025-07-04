@@ -907,12 +907,10 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
             </div>
           </div>
 
-          {/* 동적 필드 섹션들 - 모든 섹션 출력하되 최근 3개만 Field 렌더링 */}
-          {selectedDocument && selectedDatabase && selectedCollection && selectedDocumentId ? (
             <DocumentProvider
               databaseName={selectedDatabase.name}
-              collectionName={selectedCollection}
-              documentId={selectedDocumentId}
+              collectionName={selectedCollection || ''}
+              documentId={selectedDocumentId || ''}
               document={selectedDocument}
               onDocumentChange={setSelectedDocument}
             >
@@ -969,61 +967,6 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
                 );
               })}
             </DocumentProvider>
-          ) : (
-            /* Show empty state when no document is selected */
-            Array.from({ length: Math.max(1, currentDepth + 1) }, (_, index) => {
-              const totalSections = Math.max(1, currentDepth + 1);
-              const isLastSection = index === totalSections - 1;
-              const parentField = index > 0 ? fieldStack[index - 1] : null;
-
-              const parentType = parentField?.type || [];
-              const hasRefField = parentField?.type.includes('ObjectId') || false;
-              const isRefField = parentType.length === 2 && parentType.includes("ObjectId") && parentType.includes("Referenced");
-              const referencedId = parentField?.referencedId;
-
-              // 렌더링 여부 결정: 최근 3개 섹션만 true
-              const shouldRenderFields = index >= Math.max(0, totalSections - 3);
-
-              return (
-                <div
-                  key={index}
-                  className={`${isLastSection ? 'w-[50%]' : 'w-[25%]'} overflow-x-hidden`}
-                >
-                  <FieldSection
-                    depth={index}
-                    title={
-                      index === 0
-                        ? selectedDocument
-                          ? 'Document Fields'
-                          : 'Field Details'
-                        : isRefField
-                          ? 'Referenced Documents'
-                          : `${fieldStack[index - 1]?.name || 'Field'} Properties`
-                    }
-                    icon={
-                      <svg className="w-4 h-4 mr-2 text-purple-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                      </svg>
-                    }
-                    fields={getFieldsAtDepth(index)}
-                    selectedFieldAtDepth={selectedFields[index] || null}
-                    currentDepth={currentDepth}
-                    isActive={index <= currentDepth}
-                    hasRefField={hasRefField}
-                    isRefField={isRefField}
-                    referencedId={referencedId}
-                    referencedDatabase={parentField?.referencedDatabase || null}
-                    referencedCollection={parentField?.referencedCollection || null}
-                    parentFieldPath={parentField?.path || []}
-                    shouldRenderFields={shouldRenderFields}
-                    highlightedFields={highlightedFields}
-                    onFieldSelect={handleFieldSelect}
-                    onBackNavigation={handleBackNavigation}
-                  />
-                </div>
-              );
-            })
-          )}
         </div>
       </div>
     </div>
