@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDocumentContext } from '../../contexts/DocumentContext';
 
 export interface AddFieldProps {
@@ -31,6 +31,25 @@ export const AddFieldButton: React.FC<AddFieldComponentProps> = ({
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldValue, setNewFieldValue] = useState('');
   const [newFieldType, setNewFieldType] = useState<'string' | 'number' | 'boolean' | 'object' | 'array'>('string');
+
+  // ESC 키 처리 - AddField가 활성화된 상태에서만
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isActive) {
+        // ESC 키 이벤트를 방지하여 상위 컴포넌트에서 처리되지 않도록 함
+        event.preventDefault();
+        event.stopPropagation();
+        handleCancel();
+      }
+    };
+
+    if (isActive) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isActive]);
 
   // Reset form when becoming active
   const handleActivate = () => {
@@ -118,7 +137,7 @@ export const AddFieldButton: React.FC<AddFieldComponentProps> = ({
 
   // Show the form when active
   return (
-    <div className={`group p-3 rounded-lg border-2 border-blue-300 bg-blue-50 mb-1 ${className}`}>
+    <div className={`CancelESC group p-3 rounded-lg border-2 border-blue-300 bg-blue-50 mb-1 ${className}`}>
       {/* Error display */}
       {error && (
         <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-xs">

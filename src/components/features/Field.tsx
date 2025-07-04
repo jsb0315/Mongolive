@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FieldPath } from '../../types/collectionTypes';
 import { formatValue, canTraverse } from '../../utils/mongoUtils';
 import { useDocumentContext } from '../../contexts/DocumentContext';
-import AddField from './AddField';
 
 interface FieldProps {
   field: FieldPath;
@@ -39,6 +38,29 @@ const Field: React.FC<FieldProps> = ({
 
   // const isRefField = fieldType.includes('Referenced') && field.referencedId;  // ReferencedDocument 탐색 여부
   const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
+
+  // ESC 키 처리 useEffect
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (isEditing) {
+          // 편집 모드에서 ESC 키: 편집 취소
+          handleEditCancel();
+        } else if (isSelected && depth === currentDepth) {
+          // 필드 상세정보가 펼쳐진 상태에서 ESC 키: 선택 해제
+          onFieldSelect(field, parentPath, depth);
+        }
+      }
+    };
+
+    // isEditing 상태이거나 선택된 필드일 때만 이벤트 리스너 추가
+    if (isEditing || (isSelected && depth === currentDepth)) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isEditing, isSelected, depth, currentDepth, field, parentPath, onFieldSelect]);
 
   // 편집 모드 핸들러 함수들
   const handleEditStart = () => {
@@ -280,7 +302,7 @@ const Field: React.FC<FieldProps> = ({
             <div className="flex items-center justify-center gap-1 min-w-0 truncate text-ellipsis">
               {isEditing ? (
                 // 편집 모드: 입력 필드
-                <div className="flex items-center gap-1 w-full">
+                <div className="CancelESC flex items-center gap-1 w-full">
                   {canTraverse(fieldValue, fieldType) ? (
                     // traversable 필드: name만 편집 가능
                     !isArrayRefDoc ? (
@@ -340,11 +362,23 @@ const Field: React.FC<FieldProps> = ({
                 // 보기 모드: 기존 디스플레이
                 <>
                   {!isArrayRefDoc && (
-                    <span className="font-medium text-gray-900 text-sm">
+                    <span 
+                      className="font-medium text-gray-900 text-sm cursor-pointer hover:bg-gray-100 px-1 rounded"
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        handleEditStart();
+                      }}
+                    >
                       {displayName}:
                     </span>
                   )}
-                  <span className={"text-sm text-gray-600 font-mono truncate"}>
+                  <span 
+                    className="text-sm text-gray-600 font-mono truncate cursor-pointer hover:bg-gray-100 px-1 rounded"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleEditStart();
+                    }}
+                  >
                     {displayValue}
                   </span>
                 </>
@@ -453,7 +487,7 @@ const Field: React.FC<FieldProps> = ({
       {isSelected && depth === currentDepth && !isEditing && (
         <div className="mt-3 pt-3 border-t border-purple-200 overflow-hidden"
           onClick={(e) => e.stopPropagation()}>
-          <pre className="bg-gray-50 p-3 rounded text-xs overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
+          <pre className="CancelESC bg-gray-50 p-3 rounded text-xs overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
             {JSON.stringify(fieldValue, null, 2)}
           </pre>
           <div className="mt-2 flex space-x-2 flex-wrap">

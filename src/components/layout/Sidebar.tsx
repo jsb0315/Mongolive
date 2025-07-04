@@ -179,7 +179,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {showContent && !isCollapsed && currentCollection && isDatabaseConnected && (
         <div className="mt-6 mb-4 mx-4 border-t border-gray-200 pt-4">
           <div className="mb-3">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Real-time</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">ChangeStream</h3>
             <div className="text-xs text-gray-500 mb-3">
               Collection: <span className="font-medium">{currentCollection}</span>
             </div>

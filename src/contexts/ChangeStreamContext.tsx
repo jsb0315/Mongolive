@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react';
 import { 
   apiClient, 
@@ -25,6 +24,7 @@ export interface ChangeStreamContextValue {
   // Actions
   subscribeToCollection: (dbName: string, collectionName: string, onDataRefresh?: () => void) => Promise<void>;
   unsubscribeFromCollection: (dbName: string, collectionName: string) => void;
+  unsubscribeAll: () => void;
   clearNotifications: () => void;
   isSubscribed: (dbName: string, collectionName: string) => boolean;
   getSubscriptionStatus: (dbName: string, collectionName: string) => string;
@@ -118,6 +118,40 @@ export const ChangeStreamProvider: React.FC<ChangeStreamProviderProps> = ({
     
     console.log('🔴 ChangeStream unsubscribed:', key);
   }, []);
+
+  const unsubscribeAll = useCallback(() => {
+    console.log('🔴 Unsubscribing from all ChangeStreams...');
+    
+    // 현재 모든 구독 정보 가져오기
+    const currentSubscriptions = [...subscriptions];
+    
+    // 각 구독을 개별적으로 해제
+    currentSubscriptions.forEach(sub => {
+      const key = sub.subscriptionKey;
+      
+      // API 구독 해제
+      if (activeSubscriptionsRef.current.has(key)) {
+        apiClient.unsubscribeFromCollection(sub.dbName, sub.collectionName);
+        activeSubscriptionsRef.current.delete(key);
+      }
+      
+      // 재시도 타이머 정리
+      if (retryTimeoutsRef.current.has(key)) {
+        clearTimeout(retryTimeoutsRef.current.get(key)!);
+        retryTimeoutsRef.current.delete(key);
+      }
+      
+      // 콜백 정리
+      dataRefreshCallbacksRef.current.delete(key);
+      
+      console.log('🔴 ChangeStream unsubscribed:', key);
+    });
+    
+    // 모든 구독 상태 초기화
+    setSubscriptions([]);
+    
+    console.log('🔴 All ChangeStream subscriptions cleared');
+  }, [subscriptions]);
 
   const subscribeToCollection = useCallback(async (
     dbName: string, 
@@ -252,6 +286,7 @@ export const ChangeStreamProvider: React.FC<ChangeStreamProviderProps> = ({
     // Actions
     subscribeToCollection,
     unsubscribeFromCollection,
+    unsubscribeAll,
     clearNotifications,
     isSubscribed,
     getSubscriptionStatus,

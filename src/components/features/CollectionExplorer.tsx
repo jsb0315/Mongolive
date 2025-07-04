@@ -38,8 +38,8 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
   onDatabaseConnectionChange,
   isRealtimeEnabled = false
 }) => {
-  const { selectedDatabase, setCurrentCollection } = useDatabaseContext();
-  const { subscribeToCollection, unsubscribeFromCollection, changeNotifications } = useChangeStream();
+  const { selectedDatabase, setCurrentCollection, currentCollection } = useDatabaseContext();
+  const { subscribeToCollection, unsubscribeFromCollection, unsubscribeAll, changeNotifications } = useChangeStream();
   
   // State 관리
   const [databases, setDatabases] = useState<APIDatabase[]>([]);
@@ -76,6 +76,32 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
   });
   
   const [error, setError] = useState<string | null>(null);
+
+  // ESC 키 핸들링을 위한 useEffect 추가
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        // 편집 모드 요소가 존재하는지 확인
+        const editingElement = document.querySelector('.CancelESC');
+        if (editingElement) {
+          return;
+        }
+        // 현재 depth가 0보다 크면 한 단계 뒤로 이동
+        if (currentDepth > 0) {
+          event.preventDefault();
+          handleBackNavigation(currentDepth - 1);
+        }
+      }
+    };
+
+    // 전역 keydown 이벤트 리스너 등록
+    document.addEventListener('keydown', handleKeyDown);
+
+    // 컴포넌트 언마운트 시 이벤트 리스너 제거
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [currentDepth]); // currentDepth 변경 시마다 리스너 재등록
 
   // 데이터베이스 목록 로드 (summary endpoint 사용)
   useEffect(() => {
@@ -466,14 +492,20 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
     if (!selectedDatabase) return;
 
     try {
-      // console.log(`\n==================================== \nSelecting collection: ${collectionName} from database: ${selectedDatabase.name}`);
+      console.log(`🎯 Selecting collection: ${collectionName} from database: ${selectedDatabase.name}`);
       
       setLoading(prev => ({ ...prev, documents: true }));
       setError(null);
+      
+      // 1. ChangeStreamContext의 모든 구독 제거
+      console.log('🔴 Removing all existing ChangeStream subscriptions...');
+      unsubscribeAll();
+      
+      // 2. 로컬 상태 업데이트
       setSelectedCollection(collectionName);
       setCurrentCollection(collectionName); // DatabaseContext에 알림
 
-      // summary API에서 컬렉션 요약 정보 로드
+      // 3. 컬렉션 요약 정보 로드
       const summary = await apiClient.getCollectionSummary(selectedDatabase.name, collectionName);
       setCollectionSummary(summary);
       setSelectedDocumentId(null);
@@ -482,10 +514,26 @@ const CollectionExplorer: React.FC<CollectionExplorerProps> = ({
       setFieldStack([]);
       setCurrentDepth(0);
 
-      // console.log(summary, `Loaded collection summary for ${selectedDatabase.name}/${collectionName}`);
+      // 4. 해당 DB.컬렉션의 ChangeStream 자동 구독 실행 (isSubscribed를 true로 설정)
+      console.log(`🟢 Auto-subscribing to ${selectedDatabase.name}/${collectionName}...`);
+      try {
+        await subscribeToCollection(selectedDatabase.name, collectionName, async () => {
+          console.log('🔄 ChangeStream triggered data refresh for collection:', collectionName);
+          // 데이터 새로고침 로직 - 현재 선택된 문서가 있으면 다시 로드
+          if (selectedDocumentId) {
+            await handleDocumentSelect(selectedDocumentId);
+          }
+        });
+        console.log(`✅ Successfully auto-subscribed to ${selectedDatabase.name}/${collectionName} (isSubscribed: true)`);
+      } catch (subscribeError) {
+        console.warn('Failed to auto-subscribe to ChangeStream:', subscribeError);
+        // 구독 실패는 치명적이지 않으므로 에러를 던지지 않음
+      }
+
+      console.log(`✅ Collection ${collectionName} loaded successfully with ChangeStream managed`);
       
     } catch (err) {
-      console.error('Failed to load collection summary:', err);
+      console.error('❌ Failed to load collection summary:', err);
       setError(err instanceof Error ? err.message : 'Failed to load collection summary');
       setCollectionSummary(null);
     } finally {
