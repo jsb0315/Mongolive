@@ -184,6 +184,21 @@ export class APIClient {
     return response.data;
   }
 
+  // Update specific document by ID
+  async updateDocument(databaseName: string, collectionName: string, documentId: string, updateOperation: any): Promise<APIResponse<any>> {
+    const response = await this.request<APIResponse<any>>(
+      `/api/databases/${encodeURIComponent(databaseName)}/collections/${encodeURIComponent(collectionName)}/documents/${encodeURIComponent(documentId)}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateOperation),
+      }
+    );
+    return response;
+  }
+
   // Fetch collections for a specific database
   async getCollections(databaseName: string): Promise<APICollection[]> {
     const databases = await this.getDatabases();

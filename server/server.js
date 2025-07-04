@@ -489,7 +489,7 @@ app.put('/api/databases/:dbName/collections/:collectionName/documents/:id', asyn
     
     const result = await collection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: updateData }
+      updateData  // $set, $unset 등 모든 MongoDB 연산자 지원
     );
 
     if (result.matchedCount === 0) {
