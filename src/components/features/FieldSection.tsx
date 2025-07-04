@@ -1,5 +1,6 @@
 import React from 'react';
 import Field from './Field';
+import AddField from './AddField';
 import { FieldPath } from '../../types/collectionTypes';
 
 interface FieldSectionProps {
@@ -102,20 +103,34 @@ const FieldSection: React.FC<FieldSectionProps> = ({
             </div>
           </div>
         ) : (
-          fields
-            .filter(field => field.name !== '_id')
-            .map((field) => (
-              <Field
-                key={field.name}
-                field={field}
-                selectedFieldName={selectedFieldAtDepth}
-                depth={depth}
-                currentDepth={currentDepth}
-                isHighlighted={highlightedFields.has(field.name)}
-                onFieldSelect={onFieldSelect}
-                parentPath={depth === 0 ? [] : parentFieldPath}
-              />
-            ))
+          <>
+            {/* 기존 필드들 */}
+            {fields
+              .filter(field => field.name !== '_id')
+              .map((field) => (
+                <Field
+                  key={field.name}
+                  field={field}
+                  selectedFieldName={selectedFieldAtDepth}
+                  depth={depth}
+                  currentDepth={currentDepth}
+                  isHighlighted={highlightedFields.has(field.name)}
+                  onFieldSelect={onFieldSelect}
+                  parentPath={depth === 0 ? [] : parentFieldPath}
+                />
+              ))
+            }
+            
+            {/* 새 필드 추가를 위한 UI */}
+            <AddField
+              parentPath={parentFieldPath || []}
+              depth={depth}
+              mode="field"
+              onSuccess={() => {
+                console.log('✅ Field added successfully');
+              }}
+            />
+          </>
         )}
       </div>
     </div>

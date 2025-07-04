@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FieldPath } from '../../types/collectionTypes';
 import { formatValue, canTraverse } from '../../utils/mongoUtils';
 import { useDocumentContext } from '../../contexts/DocumentContext';
+import AddField from './AddField';
 
 interface FieldProps {
   field: FieldPath;

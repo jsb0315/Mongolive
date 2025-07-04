@@ -15,6 +15,7 @@ interface DocumentContextValue {
   error: string | null;
   updateField: (fieldPath: string[], newName?: string, newValue?: any) => Promise<boolean>;
   deleteField: (fieldPath: string[]) => Promise<boolean>;
+  addField: (parentPath: string[], fieldName: string, fieldValue: any) => Promise<boolean>;
   refreshDocument: () => Promise<void>;
   clearError: () => void;
 }
@@ -198,6 +199,67 @@ export const DocumentProvider: React.FC<DocumentProviderProps> = ({
     }
   }, [document, databaseName, collectionName, documentId, refreshDocument]);
 
+  // Add new field
+  const addField = useCallback(async (parentPath: string[], fieldName: string, fieldValue: any): Promise<boolean> => {
+    if (!document) {
+      setError('No document available for field addition');
+      return false;
+    }
+
+    if (!fieldName.trim()) {
+      setError('Field name is required');
+      return false;
+    }
+
+    setIsUpdating(true);
+    setError(null);
+
+    try {
+      // Build the full path for the new field
+      const fullPath = parentPath.length > 0 ? [...parentPath, fieldName] : [fieldName];
+      const dotPath = fullPath.join('.');
+
+      // Check if field already exists
+      const existingValue = getValueByPath(document, fullPath);
+      if (existingValue !== undefined) {
+        setError(`Field "${fieldName}" already exists`);
+        setIsUpdating(false);
+        return false;
+      }
+
+      const updateOperation = {
+        $set: { [dotPath]: fieldValue }
+      };
+
+      console.log('➕ Adding field:', {
+        parentPath,
+        fieldName,
+        fieldValue,
+        fullPath,
+        dotPath,
+        updateOperation
+      });
+
+      const response = await apiClient.updateDocument(databaseName, collectionName, documentId, updateOperation);
+      
+      if (response.success) {
+        await refreshDocument();
+        console.log('✅ Field added successfully');
+        return true;
+      } else {
+        setError(response.error || 'Add field failed');
+        return false;
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add field';
+      setError(errorMessage);
+      console.error('❌ Field addition failed:', err);
+      return false;
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [document, databaseName, collectionName, documentId, getValueByPath, refreshDocument]);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -211,6 +273,7 @@ export const DocumentProvider: React.FC<DocumentProviderProps> = ({
     error,
     updateField,
     deleteField,
+    addField,
     refreshDocument,
     clearError
   };
