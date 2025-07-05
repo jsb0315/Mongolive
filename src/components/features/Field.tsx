@@ -244,7 +244,7 @@ const Field: React.FC<FieldProps> = ({
           e.stopPropagation();
           handleEditStart();
         }}>
-          <TypeSpan type={type} />
+          <TypeSpan type={type} className='mb-3'/>
         </div>}
 
         {/* Reference 정보 프리뷰 */}
@@ -281,12 +281,12 @@ const Field: React.FC<FieldProps> = ({
     <div
       onClick={() => !isEditing && onFieldSelect(field, parentPath, depth)}
       className={`relative group p-2 rounded-lg ${!isEditing ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 overflow-hidden mb-1 ${isHighlighted
-          ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse'
-          : isSelected
-            ? 'bg-slate-100 border border-slate-200 shadow-sm'
-            : isEditing
-              ? 'bg-blue-50 border border-blue-200 shadow-sm'
-              : 'hover:bg-gray-50 border border-transparent'
+        ? 'bg-yellow-100 border-2 border-yellow-400 shadow-md animate-pulse'
+        : isSelected
+          ? 'bg-slate-100 border border-slate-200 shadow-sm'
+          : isEditing
+            ? 'bg-blue-50 border border-blue-200 shadow-sm'
+            : 'hover:bg-gray-50 border border-transparent'
         } ${fieldType.includes('ObjectId') ? 'ring-1 ring-blue-200' : ''} ${isRefField ? 'ring-1 ring-cyan-200' : ''}`}
     >
       {/* Loading overlay */}
@@ -323,92 +323,20 @@ const Field: React.FC<FieldProps> = ({
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* 키 이름 */}
-          <div className="flex items-center gap-2 mb-1 min-w-0 truncate justify-between">
+          <div className="flex items-start gap-2 mb-1 min-w-0 truncate justify-between">
 
-            <div className="flex items-center justify-center min-w-0 truncate text-ellipsis">
+            <div className="flex items-start justify-center min-w-0 truncate text-ellipsis">
               {isEditing ? (
                 // 편집 모드: 입력 필드
-                <div className="flex items-center gap-1 mb-1 min-w-0 truncate justify-between">
-                  {isTraversable ? (
-                    // traversable 필드: name만 편집 가능
-                    !isArrayRefDoc ? (
-                      <>
-                        <input
-                          type="text"
-                          value={editedName}
-                          onChange={(e) => setEditedName(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex font-medium text-gray-900 text-sm bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 max-w-28 flex-shrink"
-                          style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
-                        />
-                        <span className="text-gray-900">:</span>
-                        <span
-                          className="text-sm text-gray-600 font-mono bg-gray-100 border border-gray-300 rounded px-1 py-0.5 min-w-0 flex-1 inline-block"
-                          title="Complex values (ObjectId, Array, Document) cannot be edited directly"
-                        >
-                          {displayValue}
-                        </span>
-                      </>
-                    ) : (
-                      // Array reference document의 경우 값만 표시
-                      <span
-                        className="text-sm text-gray-600 font-mono bg-gray-100 border border-gray-300 rounded px-1 py-0.5 min-w-0 flex-1 inline-block"
-                        title="Complex values (ObjectId, Array, Document) cannot be edited directly"
-                      >
-                        {displayValue}
-                      </span>
-                    )
-                  ) : (
-                    // non-traversable 필드: name과 value 모두 편집 가능
-                    <div className="flex w-full space-x-1">
-                      {!isArrayRefDoc && (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={editedName}
-                            onChange={(e) => setEditedName(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex font-medium text-gray-900 text-sm bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 max-w-28 flex-shrink"
-                            style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
-                          />
-                          <span className="text-gray-900">:</span>
-                        </div>
-                      )}
-
-                      {/* Value input based on type */}
-                      <div className="flex-1">
-                        {editedType === 'boolean' ? (
-                          <select
-                            value={editedValue}
-                            onChange={(e) => setEditedValue(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          >
-                            <option value="true">true</option>
-                            <option value="false">false</option>
-                          </select>
-                        ) : editedType === 'object' || editedType === 'array' ? (
-                          <textarea
-                            value={editedValue}
-                            onChange={(e) => setEditedValue(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            rows={2}
-                            placeholder={editedType === 'object' ? '{"key": "value"}' : '["item1", "item2"]'}
-                          />
-                        ) : (
-                          <input
-                            type={editedType === 'number' ? 'number' : 'text'}
-                            value={editedValue}
-                            onChange={(e) => setEditedValue(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full text-sm text-gray-600 font-mono bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder={`Enter ${editedType} value...`}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  )}
+                <div className="flex items-center gap-1 min-w-0 truncate justify-between">
+                  <input
+                        type="text"
+                        value={editedName}
+                        onChange={(e) => setEditedName(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex font-medium text-gray-900 text-sm bg-stone-50 border border-gray-300 rounded mr-1 px-1 focus:outline-none focus:border-blue-500 w-full max-w-28 flex-shrink"
+                        style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
+                      />
                 </div>
               ) : (
                 // 보기 모드: 기존 디스플레이
@@ -424,18 +352,18 @@ const Field: React.FC<FieldProps> = ({
                       {displayName}
                     </span>
                   )}
-                  <span className="text-gray-900">:</span>
-                  <span
-                    className="text-sm text-gray-600 font-mono truncate cursor-pointer hover:bg-gray-100 px-1 rounded"
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      handleEditStart();
-                    }}
-                  >
-                    {displayValue}
-                  </span>
                 </>
               )}
+              <div className="flex text-gray-900 font-medium text-sm">:</div>
+              <span
+                className="text-sm text-gray-600 font-mono truncate cursor-pointer hover:bg-gray-100 px-1 rounded"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  handleEditStart();
+                }}
+              >
+                {displayValue}
+              </span>
             </div>
 
             <div className="flex items-center space-x-1">
@@ -537,31 +465,46 @@ const Field: React.FC<FieldProps> = ({
       </div>
 
       {/* 선택된 필드의 상세 정보 - 편집 모드가 아닐 때만 표시 */}
-      {isSelected && depth === currentDepth && !isEditing && (
-        <div className="mt-3 pt-3 border-t border-purple-200 overflow-hidden"
+      {(isSelected && depth === currentDepth || isEditing) && (
+        <div className="pt-3 border-t border-purple-200 overflow-hidden"
           onClick={(e) => e.stopPropagation()}>
-          <pre className="CancelESC bg-gray-50 p-3 rounded text-xs overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
+          {(isEditing && !isTraversable) ? <div className="flex">
+            {editedType === 'boolean' ? (
+              <select
+                value={editedValue}
+                onChange={(e) => setEditedValue(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full bg-[#f9fafb] text-gray-700 border border-gray-400 text-sm rounded-md px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
+              >
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            ) : (editedType === 'object' || editedType === 'array') ? (
+              <div className="flex gap-1 items-center text-sm text-gray-500 transition-colors duration-200 font-medium pl-1.5">
+                Add New Field
+                  <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+              </div>
+            ) : (
+              <input
+                type={editedType === 'number' ? 'number' : 'text'}
+                value={editedValue}
+                onChange={(e) => setEditedValue(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full bg-stone-50 text-gray-700 border text-sm border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
+                placeholder={`Enter ${editedType} value...`}
+              />
+            )}
+          </div> : 
+            <pre className="CancelESC bg-gray-50 p-3 rounded text-xs overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
             {JSON.stringify(fieldValue, null, 2)}
           </pre>
+          }
           <div className="mt-2 flex space-x-2 flex-wrap">
             {fieldType.includes('Referenced') && (
               <button className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors duration-200">
                 Query Reference
               </button>
             )}
-            {isRefField && (
-              <button className="px-3 py-1 bg-cyan-500 text-white text-xs rounded hover:bg-cyan-600 transition-colors duration-200">
-                Explore Document
-              </button>
-            )}
-            {isTraversable && (
-              <button className="px-3 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors duration-200">
-                Explore Structure
-              </button>
-            )}
-            {/* <button className="px-3 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 transition-colors duration-200">
-              Edit Value
-            </button> */}
           </div>
         </div>
       )}
