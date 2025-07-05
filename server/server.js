@@ -6,6 +6,19 @@ const cors = require('cors');
 
 require('dotenv').config();
 
+// 보안 패치 모듈 로드
+const {
+  sanitizeQuery,
+  validateQueryComplexity,
+  rateLimitMiddleware,
+  validateDatabaseAccess,
+  validateCollectionAccess,
+  validateQueryLimits,
+  validateInputSize,
+  validateWebSocketConnection,
+  createSafeError
+} = require('./security-patches');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -117,6 +130,12 @@ function ipWhitelistMiddleware(req, res, next) {
 // 미들웨어 적용
 app.set('trust proxy', true); // 프록시 뒤에서 실제 IP 얻기
 
+// Rate Limiting 적용
+app.use(rateLimitMiddleware);
+
+// 입력 크기 제한
+app.use(validateInputSize);
+
 // IP 화이트리스트 적용
 app.use(ipWhitelistMiddleware);
 
@@ -125,8 +144,8 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' })); // 크기 제한 추가
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // 로깅 미들웨어
 app.use((req, res, next) => {
@@ -297,34 +316,45 @@ app.get('/api/databases', async (req, res) => {
     const adminDb = mongoClient.db().admin();
     const databasesList = await adminDb.listDatabases();
     
+    // 시스템 데이터베이스 필터링
+    const filteredDatabases = databasesList.databases.filter(db => 
+      !['admin', 'config', 'local'].includes(db.name)
+    );
+    
     const databases = await Promise.all(
-      databasesList.databases.map(async (db) => {
+      filteredDatabases.map(async (db) => {
         try {
+          validateDatabaseAccess(db.name);
           const database = mongoClient.db(db.name);
           const collections = await database.listCollections().toArray();
+          
+          // 시스템 컬렉션 필터링
+          const filteredCollections = collections.filter(col => 
+            !col.name.startsWith('system.') && !col.name.startsWith('fs.')
+          );
+          
           return {
             name: db.name,
             sizeOnDisk: db.sizeOnDisk,
-            collections: collections.map(col => ({
+            collections: filteredCollections.map(col => ({
               name: col.name,
               type: col.type,
               options: col.options
             }))
           };
         } catch (error) {
-          return {
-            name: db.name,
-            sizeOnDisk: db.sizeOnDisk,
-            collections: [],
-            error: error.message
-          };
+          console.error(`Error accessing database ${db.name}:`, error);
+          return null; // 접근 불가한 데이터베이스는 제외
         }
       })
     );
 
-    res.json({ success: true, data: databases });
+    res.json({ 
+      success: true, 
+      data: databases.filter(db => db !== null) 
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(createSafeError(error, 'Database listing'));
   }
 });
 
@@ -646,13 +676,21 @@ async function executeQuery(dbName, collectionName, options) {
   } = options;
 
   try {
+    // 보안 검증
+    validateDatabaseAccess(dbName);
+    validateCollectionAccess(collectionName);
+    const { limit: validatedLimit, skip: validatedSkip } = validateQueryLimits({ limit, skip });
+
     const db = await getDatabase(dbName);
     const collection = db.collection(collectionName);
 
-    // JSON 파싱 및 ObjectId 변환
-    const parsedQuery = parseQueryWithObjectId(query);
+    // JSON 파싱 및 보안 검증
+    const parsedQuery = parseSecureQuery(query);
     const parsedProjection = projection ? JSON.parse(projection) : {};
     const parsedSort = sort ? JSON.parse(sort) : {};
+
+    // 쿼리 복잡도 검증
+    validateQueryComplexity(parsedQuery);
 
     // 쿼리 실행
     const cursor = collection.find(parsedQuery);
@@ -665,7 +703,7 @@ async function executeQuery(dbName, collectionName, options) {
       cursor.sort(parsedSort);
     }
     
-    cursor.skip(parseInt(skip)).limit(parseInt(limit));
+    cursor.skip(validatedSkip).limit(validatedLimit);
 
     const [documents, totalCount] = await Promise.all([
       cursor.toArray(),
@@ -676,10 +714,10 @@ async function executeQuery(dbName, collectionName, options) {
       success: true,
       data: documents,
       metadata: {
-        totalCount,
+        totalCount: Math.min(totalCount, 10000), // 카운트도 제한
         returnedCount: documents.length,
-        skip: parseInt(skip),
-        limit: parseInt(limit)
+        skip: validatedSkip,
+        limit: validatedLimit
       }
     };
   } catch (error) {
@@ -690,11 +728,12 @@ async function executeQuery(dbName, collectionName, options) {
   }
 }
 
-// ObjectId 문자열을 ObjectId 객체로 변환
-function parseQueryWithObjectId(queryString) {
+// ObjectId 문자열을 ObjectId 객체로 변환 (보안 강화)
+function parseSecureQuery(queryString) {
   try {
     const query = JSON.parse(queryString);
-    return convertStringToObjectId(query);
+    const sanitized = sanitizeQuery(query);
+    return convertStringToObjectId(sanitized);
   } catch (error) {
     throw new SyntaxError('Invalid JSON format');
   }
@@ -889,6 +928,11 @@ io.on('connection', handleConnection);
 function handleConnection(socket) {
   const timestamp = new Date().toISOString();
   const clientIp = socket.handshake.address;
+  
+  // WebSocket 연결 제한 검증
+  if (!validateWebSocketConnection(socket)) {
+    return;
+  }
   
   // WebSocket 연결에 대한 IP 화이트리스트 검증
   if (isIPWhitelistEnabled) {

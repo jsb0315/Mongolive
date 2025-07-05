@@ -244,7 +244,7 @@ const Field: React.FC<FieldProps> = ({
           e.stopPropagation();
           handleEditStart();
         }}>
-          <TypeSpan type={type} className='mb-3'/>
+          <TypeSpan type={type} className='mt-0.5 mb-3'/>
         </div>}
 
         {/* Reference 정보 프리뷰 */}
@@ -334,7 +334,7 @@ const Field: React.FC<FieldProps> = ({
                         value={editedName}
                         onChange={(e) => setEditedName(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex font-medium text-gray-900 text-sm bg-stone-50 border border-gray-300 rounded mr-1 px-1 focus:outline-none focus:border-blue-500 w-full max-w-28 flex-shrink"
+                        className="CancelESC flex font-medium text-gray-900 text-sm bg-stone-50 border border-gray-300 rounded mr-1 px-1 focus:outline-none focus:border-blue-500 w-full max-w-28 flex-shrink"
                         style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
                       />
                 </div>

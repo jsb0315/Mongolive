@@ -48,14 +48,14 @@ const TypeSelector: React.FC<TypeSelectorProps> = ({
   };
 
   return (
-    <div className={`flex w-full gap-1 items-center ${className}`}>
+    <div className={`flex w-full h-full gap-1 items-center ${className}`}>
       {/* Current Selection Display */}
       <button
         type="button"
         onClick={handleToggle}
         disabled={disabled}
         className={`
-          flex items-center justify-between gap-1 pb-3
+          flex items-center justify-between gap-1 pb-3 pt-1
           transition-all duration-200 ease-in-out
           ${disabled ? 'opacity-50 cursor-not-allowed bg-gray-100' : 'cursor-pointer hover:border-blue-40'}
         `}
@@ -74,29 +74,34 @@ const TypeSelector: React.FC<TypeSelectorProps> = ({
       </button>
 
       {/* Expanded Horizontal Options */}
-      {isExpanded && (
-        <div className="overflow-hidden">
-          <div className="flex overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 max-w-sm gap-1">
-            {availableTypes.map((type) => (
-                <button
-                key={type.value}
-                type="button"
-                onClick={() => handleSelect(type.value)}
-                className={`
-                  mb-3 flex-shrink-0 flex items-center rounded-full transition-all duration-150 ease-in-out hover:shadow-md
-                  ${value === type.value ? 'shadow-md' : '' }
-                `}
-                title={type.label}
-                >
-                <TypeSpan 
-                  type={type.mongoType} 
-                  className="flex-shrink-0"
-                />
-                </button>
-            ))}
-          </div>
+      <div className={`
+        flex overflow-hidden h-10 w-full transition-all duration-300 ease-out relative
+        ${isExpanded ? 'max-w-sm opacity-100' : 'max-w-0 opacity-0'}
+      `}>
+        <div className={`
+          h-10 w-full side-scroll flex scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 gap-1
+          transition-transform duration-300 ease-out overflow-y-hidden
+          ${isExpanded ? 'overflow-x-auto transform translate-x-0' : 'overflow-x-hidden transform -translate-x-full'}
+        `}>
+          {availableTypes.map((type) => (
+              <button
+              key={type.value}
+              type="button"
+              onClick={() => handleSelect(type.value)}
+              className={`
+                m-1 mb-3 flex-shrink-0 flex items-center rounded-full transition-all duration-150 ease-in-out hover:ring-2 hover:ring-blue-400
+                ${value === type.value ? 'ring-2 ring-slate-400' : '' }
+              `}
+              title={type.label}
+              >
+              <TypeSpan 
+                type={type.mongoType} 
+                className="flex-shrink-0"
+              />
+              </button>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   );
 };

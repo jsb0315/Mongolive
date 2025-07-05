@@ -28,7 +28,7 @@ const TypeSpan: React.FC<TypeSpanProps> = ({ type, className = '' }) => {
       return type.map((typeStr, index) => (
         <span
           key={index}
-          className={` bg-am px-2 py-1 text-[10px] rounded-full font-medium ${getTypeColorClass(typeStr)} ${className}`}
+          className={`px-2 py-1 text-[10px] rounded-full font-medium ${getTypeColorClass(typeStr)} ${className}`}
         >
           {typeStr}
         </span>
