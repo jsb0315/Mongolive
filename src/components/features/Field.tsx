@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FieldPath } from '../../types/collectionTypes';
 import { formatValue, canTraverse } from '../../utils/mongoUtils';
 import { useDocumentContext } from '../../contexts/DocumentContext';
@@ -47,6 +47,10 @@ const Field: React.FC<FieldProps> = ({
     return 'string';
   });
 
+  // Refs for input elements
+  const input1Ref = useRef<HTMLInputElement>(null);
+  const input2Ref = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(null);
+
   const isTraversable = canTraverse(fieldValue, fieldType);
   // const isRefField = fieldType.includes('Referenced') && field.referencedId;  // ReferencedDocument 탐색 여부
   const isRefField = fieldType.length === 2 && fieldType.includes("ObjectId") && fieldType.includes("Referenced");
@@ -61,6 +65,23 @@ const Field: React.FC<FieldProps> = ({
         } else if (isSelected && depth === currentDepth) {
           // 필드 상세정보가 펼쳐진 상태에서 ESC 키: 선택 해제
           onFieldSelect(field, parentPath, depth);
+        }
+      } else if (event.key === 'Tab' && isEditing) {
+        // Tab key handling for navigation between inputs
+        const activeElement = document.activeElement;
+        
+        if (event.shiftKey) {
+          // Shift+Tab: Move from Input_2 to Input_1
+          if (activeElement === input2Ref.current && input1Ref.current) {
+            event.preventDefault();
+            input1Ref.current.focus();
+          }
+        } else {
+          // Tab: Move from Input_1 to Input_2
+          if (activeElement === input1Ref.current && input2Ref.current) {
+            event.preventDefault();
+            input2Ref.current.focus();
+          }
         }
       }
     };
@@ -330,11 +351,12 @@ const Field: React.FC<FieldProps> = ({
                 // 편집 모드: 입력 필드
                 <div className="flex items-center gap-1 min-w-0 truncate justify-between">
                   <input
+                        ref={input1Ref}
                         type="text"
                         value={editedName}
                         onChange={(e) => setEditedName(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="CancelESC flex font-medium text-gray-900 text-sm bg-stone-50 border border-gray-300 rounded mr-1 px-1 focus:outline-none focus:border-blue-500 w-full max-w-28 flex-shrink"
+                        className="Input_1 CancelESC flex font-medium text-gray-900 text-sm bg-stone-50 border border-gray-300 rounded mr-1 px-1 focus:outline-none focus:border-blue-500 w-full max-w-28 flex-shrink"
                         style={{ width: `${Math.min(editedName.length + 1, 20)}ch` }}
                       />
                 </div>
@@ -471,10 +493,11 @@ const Field: React.FC<FieldProps> = ({
           {(isEditing && !isTraversable) ? <div className="flex">
             {editedType === 'boolean' ? (
               <select
+                ref={input2Ref as React.RefObject<HTMLSelectElement>}
                 value={editedValue}
                 onChange={(e) => setEditedValue(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full bg-[#f9fafb] text-gray-700 border border-gray-400 text-sm rounded-md px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
+                className="Input_2 w-full bg-[#f9fafb] text-gray-700 border border-gray-400 text-sm rounded-md px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
               >
                 <option value="true">true</option>
                 <option value="false">false</option>
@@ -486,11 +509,12 @@ const Field: React.FC<FieldProps> = ({
               </div>
             ) : (
               <input
+                ref={input2Ref as React.RefObject<HTMLInputElement>}
                 type={editedType === 'number' ? 'number' : 'text'}
                 value={editedValue}
                 onChange={(e) => setEditedValue(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full bg-stone-50 text-gray-700 border text-sm border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
+                className="Input_2 w-full bg-stone-50 text-gray-700 border text-sm border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
                 placeholder={`Enter ${editedType} value...`}
               />
             )}
