@@ -27,8 +27,7 @@ const allowedOrigins = process.env.WHITELIST
   ? process.env.WHITELIST.split(',').map(origin => origin.trim())
   : [
     "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://14.55.202.84:3000"
+    "http://127.0.0.1:3000"
   ];
 
 const io = new Server(server, {
@@ -1095,7 +1094,7 @@ async function startServer() {
     await initMongoDB();
     
     const PORT = process.env.API_PORT || 3001;
-    const HOST = process.env.HOST || '14.55.202.84';
+    const HOST = process.env.HOST;
     
     server.listen(PORT, HOST, () => {
       console.log(`🚀 Server running on http://${HOST}:${PORT}`);
