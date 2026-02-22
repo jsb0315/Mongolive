@@ -2,7 +2,8 @@
 # 🟢 MongoLive - MongoDB Live Dashboard
 > *FireStore UI 4 MongoDB*
 ---
-<video controls src="video-1.mp4" title="Title"></video>
+![video-1](https://github.com/user-attachments/assets/1709bf73-f992-4477-ad42-a1af3f287148)
+
 ## 🎯 왜
 > Firebase 쓰다가 mongoDB compass 쓰려니 구림
 ```
