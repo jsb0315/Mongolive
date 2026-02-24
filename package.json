@@ -27,7 +27,9 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "server": "node server/server.js",
+    "dev": "concurrently \"npm run server\" \"npm run start\""
   },
   "eslintConfig": {
     "extends": [
@@ -51,6 +53,7 @@
     "@types/react": "^19.1.7",
     "@types/react-dom": "^19.1.6",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
     "postcss": "^8.5.5",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3"
