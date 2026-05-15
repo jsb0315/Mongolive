@@ -7,6 +7,14 @@ interface HeaderProps {
   currentUser?: string;
 }
 
+function getDatabaseErrorInfo(error: string) {
+  const isSecurityError = /access denied|whitelist|forbidden|unauthorized|not allowed/i.test(error);
+  return {
+    label: isSecurityError ? 'Access restricted' : 'Database load error',
+    details: isSecurityError ? 'Access is restricted by security policy.' : error
+  };
+}
+
 const Header: React.FC<HeaderProps> = ({ onLogout, currentUser = 'admin' }) => {
   const { selectedDatabase, databases, selectDatabase, isLoading, error, refreshDatabases } = useDatabaseContext();
   
@@ -76,6 +84,7 @@ const Header: React.FC<HeaderProps> = ({ onLogout, currentUser = 'admin' }) => {
   };
 
   const mongoStatusInfo = getMongoStatusInfo();
+  const databaseErrorInfo = error ? getDatabaseErrorInfo(error) : null;
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
@@ -95,8 +104,11 @@ const Header: React.FC<HeaderProps> = ({ onLogout, currentUser = 'admin' }) => {
               
               {error ? (
                 <div className="flex items-center space-x-2">
-                  <div className="px-3 py-1 bg-red-100 text-red-800 rounded-lg text-sm">
-                    Error loading databases
+                  <div
+                    className="px-3 py-1 bg-red-100 text-red-800 rounded-lg text-sm"
+                    title={databaseErrorInfo?.details}
+                  >
+                    {databaseErrorInfo?.label}
                   </div>
                   <button
                     onClick={refreshDatabases}

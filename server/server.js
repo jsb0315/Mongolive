@@ -85,6 +85,17 @@ console.log(`   Allowed IPs: ${allowedIPs.join(', ')}`);
 console.log(`   Allowed Origins: ${allowedOrigins.join(', ')}`);
 
 // IP 화이트리스트 미들웨어
+function isIpAllowed(clientIP) {
+  const normalizedIP = clientIP?.replace(/^::ffff:/, '') || '';
+
+  return allowedIPs.some(allowedIP => {
+    if (allowedIP === 'localhost' && (normalizedIP === '127.0.0.1' || normalizedIP === '::1')) {
+      return true;
+    }
+    return normalizedIP === allowedIP || clientIP === allowedIP;
+  });
+}
+
 function ipWhitelistMiddleware(req, res, next) {
   if (!isIPWhitelistEnabled) {
     return next();
@@ -103,15 +114,7 @@ function ipWhitelistMiddleware(req, res, next) {
   
   const checkString = `🔍 IP: ${normalizedIP} (Original: ${clientIP})`;
 
-  // IP 화이트리스트 검증
-  const isAllowed = allowedIPs.some(allowedIP => {
-    if (allowedIP === 'localhost' && (normalizedIP === '127.0.0.1' || normalizedIP === '::1')) {
-      return true;
-    }
-    return normalizedIP === allowedIP || clientIP === allowedIP;
-  });
-
-  if (!isAllowed) {
+  if (!isIpAllowed(clientIP)) {
     const timestamp = new Date().toISOString();
     console.log(`${checkString}.. \n${timestamp} | 🚫 BLOCKED | ${req.method} ${req.path} | IP: ${normalizedIP} | User-Agent: ${req.headers['user-agent'] || 'Unknown'}`);
     return res.status(403).json({
@@ -138,6 +141,26 @@ app.use(validateInputSize);
 // IP 화이트리스트 적용
 app.use(ipWhitelistMiddleware);
 
+// Origin 화이트리스트 유틸
+function isOriginAllowed(origin) {
+  if (!origin) return true; // same-origin or non-browser clients
+  return allowedOrigins.includes(origin);
+}
+
+// Origin 화이트리스트 검증
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!isOriginAllowed(origin)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Access denied: Origin not whitelisted',
+      origin: origin || null,
+      timestamp: new Date().toISOString()
+    });
+  }
+  next();
+});
+
 // CORS 설정
 app.use(cors({
   origin: allowedOrigins,
@@ -150,9 +173,7 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   const clientIP = req.ip?.replace(/^::ffff:/, '') || '';
-  const securityStatus = isIPWhitelistEnabled ? 
-    (allowedIPs.some(ip => ip === 'localhost' && (clientIP === '127.0.0.1' || clientIP === '::1') || clientIP === ip) ? '🟢' : '🔴') : 
-    '⚪';
+  const securityStatus = isIPWhitelistEnabled ? (isIpAllowed(clientIP) ? '🟢' : '🔴') : '⚪';
   console.log(`${timestamp} | ${securityStatus} ${req.method} | ${req.path} | ${clientIP}`);
   next();
 });
@@ -927,6 +948,18 @@ io.on('connection', handleConnection);
 function handleConnection(socket) {
   const timestamp = new Date().toISOString();
   const clientIp = socket.handshake.address;
+  const origin = socket.handshake.headers?.origin;
+
+  // WebSocket Origin 화이트리스트 검증
+  if (!isOriginAllowed(origin)) {
+    console.log(`🚫 WebSocket connection denied for Origin: ${origin || 'unknown'}`);
+    socket.emit('error', {
+      error: 'Access denied: Origin not whitelisted',
+      origin: origin || null
+    });
+    socket.disconnect(true);
+    return;
+  }
   
   // WebSocket 연결 제한 검증
   if (!validateWebSocketConnection(socket)) {
@@ -936,15 +969,8 @@ function handleConnection(socket) {
   // WebSocket 연결에 대한 IP 화이트리스트 검증
   if (isIPWhitelistEnabled) {
     const normalizedIP = clientIp?.replace(/^::ffff:/, '') || '';
-    
-    const isAllowed = allowedIPs.some(allowedIP => {
-      if (allowedIP === 'localhost' && (normalizedIP === '127.0.0.1' || normalizedIP === '::1')) {
-        return true;
-      }
-      return normalizedIP === allowedIP || clientIp === allowedIP;
-    });
 
-    if (!isAllowed) {
+    if (!isIpAllowed(clientIp)) {
       console.log(`🚫 WebSocket connection denied for IP: ${normalizedIP}`);
       socket.emit('error', { 
         error: 'Access denied: IP not whitelisted',
