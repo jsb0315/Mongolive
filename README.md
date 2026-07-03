@@ -1,4 +1,5 @@
 ![Status](https://img.shields.io/badge/status-in--development-orange)
+## 🔗 Standalone JSON Explorer -> https://github.com/jsbeep/Json-explorer
 # 🟢 MongoLive - MongoDB Live Dashboard
 > *FireStore UI 4 MongoDB*
 ---
